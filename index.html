@@ -12272,7 +12272,10 @@ function _clickupExpenseQueueChanged(){
 }
 function _clickupExpensePeriod(row){
   var d=String(row&&row.tanggal||'');
-  return d.length>=7?d.slice(0,7):'';
+  var m=d.match(/^(\d{4})-(\d{2})-/);
+  var names=['','January','February','March','April','May','June','July','August','September','October','November','December'];
+  var idx=m?parseInt(m[2],10):0;
+  return names[idx]||'';
 }
 function _clickupExpenseSource(row){
   return row.sumber||row.source||row.sourceType||row.tipe||'manual';
