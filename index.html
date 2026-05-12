@@ -11494,9 +11494,9 @@ function _clickupSupplierFieldAliases(){
     noDok:['no dokumen'],
     kode:['kode'],
     detailNota:['detail nota'],
-    totalNota:['total nota'],
+    totalNota:['total nota rekap','total nota'],
     akumulasiTotalNota:[],
-    totalBayar:[],
+    totalBayar:['total bayar rekap'],
     bayarNota:[],
     detailBayar:['detail bayar'],
     hutang:[],
@@ -11576,7 +11576,7 @@ function _clickupSupplierLoadFieldMap(){
 }
 function _clickupSupplierLogMissingFields(fields,mapped){
   var names=(fields||[]).map(function(f){return _clickupNormName(f&&f.name);});
-  var required=['supplier','periode','tanggalNota','noDok','kode','detailNota','totalNota','detailBayar','sisaNota','status'];
+  var required=['supplier','periode','tanggalNota','noDok','kode','detailNota','totalNota','totalBayar','detailBayar','sisaNota','status'];
   var aliases=_clickupSupplierFieldAliases();
   var missing=required.filter(function(k){
     if(mapped&&mapped[k]) return false;
@@ -11658,6 +11658,18 @@ function _clickupSupplierTotals(d){
   var saldo=totalNota-totalBayar;
   return {nota:totalNota,bayar:totalBayar,saldo:saldo,status:saldo<=0?'Lunas':(totalBayar>0?'Sebagian':'Belum Bayar')};
 }
+function _clickupSupplierSamePeriodPayTotal(d){
+  if(!d) return 0;
+  var y=parseInt(d.tahun,10)||0, m=parseInt(d.bulanNum,10)||0;
+  return (d.bayar||[]).reduce(function(sum,b){
+    var s=String((b&&b.tgl)||'');
+    var mm=s.match(/^(\d{4})-(\d{2})-/);
+    if(y&&m&&mm){
+      if(parseInt(mm[1],10)!==y||parseInt(mm[2],10)!==m) return sum;
+    }
+    return sum+(parseFloat((b&&b.jumlah)||0)||0);
+  },0);
+}
 function _clickupSupplierStatusName(d){
   var t=_clickupSupplierTotals(d);
   if(t.saldo<=0) return 'LUNAS';
@@ -11731,14 +11743,7 @@ function _clickupSupplierMarkdown(d){
     });
   }else lines.push('| - | - | - | - | Rp 0 |');
   lines.push('');
-  lines.push('### History Bayar');
-  lines.push('| Tanggal | Keterangan | Jumlah | Bukti |');
-  lines.push('|---|---|---:|---|');
-  if((d.bayar||[]).length){
-    (d.bayar||[]).forEach(function(b){
-      lines.push('| '+(b.tgl||'-')+' | '+(b.keterangan||'-')+' | Rp '+fmt(parseFloat(b.jumlah)||0)+' | '+(b.bukti?'Ada bukti':'-')+' |');
-    });
-  }else lines.push('| - | - | Rp 0 | - |');
+  lines.push('History bayar dicatat pada subtask nota terkait.');
   if((d.buktiFoto||[]).length){
     lines.push('');
     lines.push('Bukti foto nota tersimpan di AJW: '+d.buktiFoto.length+' file.');
@@ -11746,7 +11751,7 @@ function _clickupSupplierMarkdown(d){
   return lines.join('\n');
 }
 function _clickupSupplierCustomFields(d){
-  var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d);
+  var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d), payRekap=_clickupSupplierSamePeriodPayTotal(d);
   var first=(d.nota&&d.nota[0])||{}, latestPay=(d.bayar&&d.bayar[d.bayar.length-1])||{};
   var period=_clickupSupplierPeriod(d), status=_clickupSupplierStatusName(d);
   var map={
@@ -11758,7 +11763,7 @@ function _clickupSupplierCustomFields(d){
     tanggalNota:first.tgl||'',
     totalNota:t.nota,
     akumulasiTotalNota:t.nota,
-    totalBayar:t.bayar,
+    totalBayar:payRekap,
     bayarNota:'',
     detailBayar:'',
     hutang:t.saldo,
