@@ -12167,7 +12167,7 @@ function _clickupExpenseFieldAliases(){
     namaPengeluaran:['nama pengeluaran','pengeluaran','nama','judul'],
     kategori:['kategori','kategori pengeluaran'],
     nominal:['nominal','jumlah','amount','biaya'],
-    sumber:['sumber','source','asal data'],
+    sumber:['sumber','sumber pengeluaran','source','source type','tipe sumber','asal data','asal','dari'],
     catatan:['catatan','keterangan','note'],
     aksi:['aksi','action','status'],
     periode:['periode','bulan','month'],
@@ -12234,8 +12234,12 @@ function _clickupExpenseLogMissingFields(fields,mapped){
     if(mapped&&mapped[k]) return false;
     return !(aliases[k]||[]).some(function(a){return names.indexOf(_clickupNormName(a))>=0;});
   });
-  if(missing.length) _clickupLog('warn','Custom field Pengeluaran kurang',missing.join(', '));
-  else _clickupLog('success','Custom field Pengeluaran lengkap','Tanggal, Nama Pengeluaran, Kategori, Nominal, Sumber, Catatan, Aksi terdeteksi.');
+  var cfg=getCfg()||{}, listId=(_clickupExpenseCfg()||{}).listId||'', lists=cfg.clickupDetectedLists||[];
+  var list=(lists||[]).filter(function(l){return String(l.id)===String(listId);})[0]||{};
+  var listLabel=(list.name?list.name+' / ':'')+listId;
+  if(missing.length){
+    _clickupLog('warn','Custom field Pengeluaran kurang',missing.join(', ')+' | List: '+(listLabel||'-')+' | Field terbaca: '+((fields||[]).map(function(f){return f.name||'-';}).join(', ')||'-'));
+  }else _clickupLog('success','Custom field Pengeluaran lengkap','List: '+(listLabel||'-')+' | Tanggal, Nama Pengeluaran, Kategori, Nominal, Sumber, Catatan, Aksi terdeteksi.');
 }
 function _clickupExpenseKnownLoad(){
   try{return JSON.parse(localStorage.getItem('ajw_clickup_expense_known')||'{}')||{};}catch(e){return {};}
