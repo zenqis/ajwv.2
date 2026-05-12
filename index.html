@@ -11997,6 +11997,10 @@ function _clickupIsMissingTaskError(e){
   var msg=String((e&&e.message)||e||'').toLowerCase();
   return msg.indexOf('not found')>=0||msg.indexOf('does not exist')>=0||msg.indexOf('task not found')>=0||msg.indexOf('item not found')>=0||msg.indexOf('http 404')>=0;
 }
+function _clickupIsStatusError(e){
+  var msg=String((e&&e.message)||e||'').toLowerCase();
+  return msg.indexOf('status not found')>=0||msg.indexOf('invalid status')>=0||msg.indexOf('status does not exist')>=0;
+}
 function _clickupHashText(s){
   s=String(s||'');
   var h=0,i=0;
@@ -13158,6 +13162,11 @@ function _clickupPayrollPayload(r,includeCustom){
   if(cf.length) payload.custom_fields=cf;
   return payload;
 }
+function _clickupPayrollPayloadNoStatus(r,includeCustom){
+  var payload=_clickupPayrollPayload(r,includeCustom);
+  delete payload.status;
+  return payload;
+}
 function _clickupPayrollApplyLocal(id,patch){
   var key=String(id);
   (payHistory||[]).forEach(function(r){ if(String(r.id)===key) Object.keys(patch||{}).forEach(function(k){r[k]=patch[k];}); });
@@ -13199,7 +13208,13 @@ function _clickupPayrollUpsert(row,taskId){
   var c=_clickupPayrollCfg();
   return _clickupPayrollLoadFieldMap().catch(function(){}).then(function(){
     if(taskId){
-      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupPayrollPayload(row,false)).then(function(res){
+      var updatePayload=_clickupPayrollPayload(row,false);
+      var updateReq=_clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',updatePayload).catch(function(err){
+        if(!_clickupIsStatusError(err)) throw err;
+        _clickupLog('warn','Status Payroll tidak ditemukan','Task diupdate tanpa status. Sesuaikan status Payroll di Pusat Kontrol jika ingin status otomatis.');
+        return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupPayrollPayloadNoStatus(row,false));
+      });
+      return updateReq.then(function(res){
         return _clickupSetCustomFields(taskId,_clickupPayrollCustomFields(row),'payroll').then(function(){
           return _clickupPayrollUploadPdf(row,taskId).then(function(){return res;});
         });
@@ -13212,7 +13227,12 @@ function _clickupPayrollUpsert(row,taskId){
         return _clickupPayrollUpsert(row,'');
       });
     }
-    return _clickupCreateTaskInList(c.listId,_clickupPayrollPayload(row,true)).then(function(res){
+    var createPayload=_clickupPayrollPayload(row,true);
+    return _clickupCreateTaskInList(c.listId,createPayload).catch(function(err){
+      if(!_clickupIsStatusError(err)) throw err;
+      _clickupLog('warn','Status Payroll tidak ditemukan','Task dibuat tanpa status. Sesuaikan status Payroll di Pusat Kontrol jika ingin status otomatis.');
+      return _clickupCreateTaskInList(c.listId,_clickupPayrollPayloadNoStatus(row,true));
+    }).then(function(res){
       return _clickupPayrollUploadPdf(row,res&&res.id).then(function(){return res;});
     });
   });
@@ -13818,8 +13838,9 @@ function _renderToolsClickupIntegration(){
   var listRows=lists.length?lists.slice(0,30).map(function(l){return '<div style="padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg2)"><div style="display:flex;justify-content:space-between;gap:8px"><div><b style="font-size:12px">'+esc(l.name||'-')+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(l.id||'')+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btnsm" onclick="_clickupToolsAssignList(\'hutang_supplier\',\''+escAttr(l.id)+'\')">Hutang</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_expense\',\''+escAttr(l.id)+'\')">Pengeluaran</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_income\',\''+escAttr(l.id)+'\')">Pendapatan</button><button class="btnsm" onclick="_clickupToolsAssignList(\'hr_payroll\',\''+escAttr(l.id)+'\')">Payroll</button></div></div></div>';}).join(''):'<div style="color:var(--tx2);font-size:12px">Belum ada list terdeteksi.</div>';
   var logCards=logs.slice(0,12).map(function(l){return '<div style="border:1px solid var(--bd);border-radius:8px;background:var(--bg2);padding:9px 10px"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:11px;color:'+lc(l.level)+'">'+ll(l.level)+'</b><span style="font-size:10px;color:var(--tx2)">'+esc(l.ts?new Date(l.ts).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'-')+'</span></div><div style="font-size:12px;font-weight:800;color:var(--tx);margin-top:4px">'+esc(l.title||'-')+'</div><div style="font-size:11px;color:var(--tx2);margin-top:3px;line-height:1.35">'+esc(l.detail||'-')+'</div></div>';}).join('')||'<div style="padding:14px;border:1px dashed var(--bd);border-radius:8px;color:var(--tx2);font-size:12px">Belum ada log.</div>';
   var h='';
+  h+='<style>.tools-sub-clickup .clickup-inner-tabbar{display:flex!important;gap:6px!important;flex-wrap:wrap!important;background:#fff!important;border:1px solid #d8dee7!important;border-radius:6px!important;padding:6px!important}.tools-sub-clickup .clickup-inner-tabbar button{appearance:none!important;border:1px solid #d8dee7!important;background:#f8fafc!important;color:#334155!important;border-radius:4px!important;padding:7px 10px!important;font:800 11px Arial,sans-serif!important;line-height:1.1!important;cursor:pointer!important}.tools-sub-clickup .clickup-inner-tabbar button.active{background:#c77818!important;border-color:#c77818!important;color:#fff!important}.tools-sub-clickup .sup-soft-chip{background:#f8fafc!important;border:1px solid #d8dee7!important;border-radius:999px!important;padding:6px 9px!important;color:#334155!important;font-size:11px!important;font-weight:800!important;display:inline-flex!important;gap:6px!important;align-items:center!important}.tools-sub-clickup .btnp,.tools-sub-clickup .btns,.tools-sub-clickup .btnsm{min-height:30px!important}</style>';
   h+='<div style="padding:2px 4px 12px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:18px;font-weight:900;color:var(--tx)">ClickUp Integration</div><div style="font-size:12px;color:var(--tx2);margin-top:4px">Integrasi AJW ke ClickUp dengan monitoring, sync, setup, dan mapping.</div></div><label class="sup-soft-chip"><input id="CUT-EN" type="checkbox" '+(ck('CUT-EN',cfg.clickupSupplierEnabled)?'checked':'')+'> <span>Realtime</span><b>'+(cfg.clickupSupplierEnabled?'Aktif':'Off')+'</b></label></div>';
-  h+='<div class="subtabs" style="margin-bottom:12px">'+tab('dash','Dashboard Utama')+tab('log','Log Ringkas')+tab('control','Pusat Kontrol')+'</div>';
+  h+='<div class="tools-tabbar clickup-inner-tabbar" style="margin-bottom:12px">'+tab('dash','Dashboard Utama')+tab('log','Log Ringkas')+tab('control','Pusat Kontrol')+'</div>';
   if(view==='dash'){
     h+='<div style="display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin-bottom:12px">'+kpi('Sync Health',progress+'%','Terakhir: '+esc(lastLabel),failTotal?'#B91C1C':(queueTotal?'#D97706':'#166534'))+kpi('Queue',queueTotal,'H '+q.length+' / E '+qe.length+' / I '+qi.length+' / P '+qp.length,'#2563EB')+kpi('Mapping Core',mappedCore+'/4','Hutang, expense, income, payroll','#0F766E')+kpi('Custom Field',fieldTotal,lists.length+' list','#7C3AED')+kpi('Error',failTotal,'Perlu dicek','#B91C1C')+'</div>';
     h+='<div style="display:grid;grid-template-columns:minmax(320px,.85fr) minmax(0,1.15fr);gap:12px">'+
