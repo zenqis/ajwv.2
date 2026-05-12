@@ -11698,7 +11698,7 @@ function _clickupSupplierCustomFields(d){
   Object.keys(map).forEach(function(k){
     if(fields[k]){
       var val=_clickupSupplierFieldValue(fields[k],map[k]);
-      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val});
+      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val,key:k});
     }
   });
   return out;
@@ -11760,7 +11760,7 @@ function _clickupSupplierNoteFields(d,n,idx){
   Object.keys(map).forEach(function(k){
     if(fields[k]&&String(fields[k].type).toLowerCase()!=='tasks'){
       var val=_clickupSupplierFieldValue(fields[k],map[k]);
-      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val});
+      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val,key:k});
     }
   });
   return out;
@@ -11927,6 +11927,18 @@ function _clickupSupplierApplyLocal(id, patch){
 function _clickupSupplierPatchLocalRow(d){
   if(d&&d.id) _clickupSupplierApplyLocal(d.id,d);
 }
+function _clickupSetCustomFields(taskId, fields, label){
+  if(!taskId||!fields||!fields.length) return Promise.resolve({failed:[]});
+  var failed=[];
+  return Promise.all(fields.map(function(field){
+    return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(e){
+      failed.push((field.key||field.id)+': '+((e&&e.message)||String(e)));
+    });
+  })).then(function(){
+    if(failed.length) _clickupLog('error','Custom field gagal diupdate',String(label||'task')+' -> '+failed.join(' | '));
+    return {failed:failed};
+  });
+}
 function _clickupSupplierSyncSubtasks(d,parentId){
   if(!parentId) return Promise.resolve([]);
   var known=d.clickupSubtaskIds||{};
@@ -11940,9 +11952,7 @@ function _clickupSupplierSyncSubtasks(d,parentId){
       if(tid){
         return _clickupSupplierRequest('/task/'+encodeURIComponent(tid),'PUT',_clickupSupplierNotePayload(d,n,idx,false,parentId)).then(function(res){
           var cf=_clickupSupplierNoteFields(d,n,idx);
-          return Promise.all(cf.map(function(field){
-            return _clickupSupplierRequest('/task/'+encodeURIComponent(tid)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
-          })).then(function(){
+          return _clickupSetCustomFields(tid,cf,'hutang nota').then(function(){
             ids.push(tid);
             return _clickupSupplierClearCustomFields(tid,['totalNota','akumulasiTotalNota','totalBayar','sisaHutang']).then(function(){
               return _clickupSupplierUploadNoteAttachments(d,idx,tid).then(function(){ return res; });
@@ -12028,9 +12038,7 @@ function _clickupSupplierUpsert(d, taskId){
     if(taskId){
       return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupSupplierPayload(d,false)).then(function(res){
         var cf=_clickupSupplierCustomFields(d);
-        return Promise.all(cf.map(function(field){
-          return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
-        })).then(function(){
+        return _clickupSetCustomFields(taskId,cf,'hutang supplier').then(function(){
           return _clickupSupplierClearCustomFields(taskId,['detailNota','bayarNota','detailBayar','sisaNota']).then(function(){
             return _clickupSupplierUploadAttachments(d,taskId).then(function(){
               return _clickupSupplierSyncSubtasks(d,taskId).then(function(ids){
@@ -12318,7 +12326,7 @@ function _clickupExpenseCustomFields(row){
   Object.keys(map).forEach(function(k){
     if(fields[k]){
       var val=_clickupSupplierFieldValue(fields[k],map[k]);
-      if(val!==undefined&&val!==null) out.push({id:fields[k].id,value:val});
+      if(val!==undefined&&val!==null) out.push({id:fields[k].id,value:val,key:k});
     }
   });
   return out;
@@ -12379,9 +12387,7 @@ function _clickupExpenseUpsert(row,taskId){
     if(taskId){
       return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupExpensePayload(row,false)).then(function(res){
         var cf=_clickupExpenseCustomFields(row);
-        return Promise.all(cf.map(function(field){
-          return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
-        })).then(function(){
+        return _clickupSetCustomFields(taskId,cf,'pengeluaran').then(function(){
           return _clickupExpenseUploadAttachments(row,taskId).then(function(){return res;});
         });
       }).catch(function(err){
