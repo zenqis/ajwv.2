@@ -101,9 +101,9 @@ function clickupPath(rawPath) {
   return path;
 }
 
-app.post("/api/clickup/proxy", async (req, res) => {
+async function handleClickupProxy(req, res) {
   try {
-    const body = req.body || {};
+    const body = req.method === "GET" ? req.query || {} : req.body || {};
     const path = clickupPath(body.path);
     if (!path) return res.status(400).json({ ok: false, error: "Path ClickUp tidak valid" });
     const token = clickupToken(req, body);
@@ -127,9 +127,11 @@ app.post("/api/clickup/proxy", async (req, res) => {
   } catch (err) {
     return res.status(502).json({ ok: false, error: err.message || "ClickUp proxy gagal" });
   }
-});
+}
 
-app.post("/api/clickup/oauth/token", async (req, res) => {
+app.all(["/api/clickup/proxy", "/api/clickup/proxy/"], handleClickupProxy);
+
+async function handleClickupOAuthToken(req, res) {
   try {
     const body = req.body || {};
     const clientId = String(body.client_id || body.clientId || "").trim();
@@ -150,7 +152,9 @@ app.post("/api/clickup/oauth/token", async (req, res) => {
   } catch (err) {
     return res.status(502).json({ ok: false, error: err.message || "OAuth ClickUp gagal" });
   }
-});
+}
+
+app.all(["/api/clickup/oauth/token", "/api/clickup/oauth/token/"], handleClickupOAuthToken);
 
 function normalizeXaiApiKey(req, body = {}) {
   return String(
