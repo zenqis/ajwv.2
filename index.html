@@ -11390,15 +11390,31 @@ function sbSyncSupplierAll(){
 /* ──── CLICKUP SYNC: AJW -> CLICKUP, one-way queue ──── */
 function _clickupSupplierCfg(){
   var cfg=getCfg()||{};
+  var listRaw=String(cfg.clickupSupplierListId||'').trim();
+  var listId=_clickupNormalizeListId(listRaw);
   return {
     enabled:!!cfg.clickupSupplierEnabled,
     token:String(cfg.clickupToken||'').trim(),
-    listId:String(cfg.clickupSupplierListId||'').trim(),
+    listId:listId,
+    listRaw:listRaw,
     statusOpen:String(cfg.clickupSupplierStatusOpen||'').trim(),
     statusPartial:String(cfg.clickupSupplierStatusPartial||'').trim(),
     statusPaid:String(cfg.clickupSupplierStatusPaid||'').trim(),
     fields:cfg.clickupSupplierFields||{}
   };
+}
+function _clickupNormalizeListId(v){
+  var s=String(v||'').trim();
+  if(!s) return '';
+  var m=s.match(/\/l\/([^/?#]+)/i);
+  if(m) s=m[1];
+  s=s.replace(/^list:/i,'').trim();
+  return s;
+}
+function _clickupListIdFallback(v){
+  var s=_clickupNormalizeListId(v);
+  var m=s.match(/^\d+-(\d+)-\d+$/);
+  return m?m[1]:'';
 }
 function _clickupSupplierReady(){
   var c=_clickupSupplierCfg();
@@ -11580,7 +11596,11 @@ function _clickupSupplierUpsert(d, taskId){
       })).then(function(){ return res; });
     });
   }
-  return _clickupSupplierRequest('/list/'+encodeURIComponent(c.listId)+'/task','POST',_clickupSupplierPayload(d,true));
+  return _clickupSupplierRequest('/list/'+encodeURIComponent(c.listId)+'/task','POST',_clickupSupplierPayload(d,true)).catch(function(err){
+    var fb=_clickupListIdFallback(c.listId);
+    if(!fb || fb===c.listId) throw err;
+    return _clickupSupplierRequest('/list/'+encodeURIComponent(fb)+'/task','POST',_clickupSupplierPayload(d,true));
+  });
 }
 function _clickupSupplierProcess(){
   if(!_clickupSupplierReady()) return;
@@ -11750,12 +11770,13 @@ function _clickupAdminLoadLists(){
     var lists=[]; all.forEach(function(d){ lists=lists.concat(d.lists||[]); });
     var rows=lists.map(function(l){ return (l.name||'-')+' / '+l.id; });
     var box=document.getElementById('CU-INFO'); if(box) box.value='Lists:\n'+(rows.join('\n')||'-');
-    toast('Lists ClickUp dimuat. Copy ID list Hutang Supplier ke field List ID.','success',5200);
+    toast(lists.length?'Lists ClickUp dimuat. Copy ID list Hutang Supplier ke field List ID.':'Tidak ada list dari Space/Folder ini. Kalau punya URL list, tempel URL langsung ke field List ID.','success',6200);
   }).catch(function(e){ toast('Load lists gagal: '+e.message,'error',6500); });
 }
 function _clickupAdminSyncSupplierNow(){
   _clickupAdminSaveCfg();
   var cfg=getCfg()||{};
+  cfg.clickupSupplierListId=_clickupNormalizeListId(cfg.clickupSupplierListId);
   if(!cfg.clickupToken||!cfg.clickupSupplierListId){ toast('Isi Token dan List ID Hutang Supplier dulu','warn'); return; }
   cfg.clickupSupplierEnabled=true; saveCfg(cfg);
   _clickupSupplierSyncNow();
