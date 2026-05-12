@@ -13106,8 +13106,11 @@ function _clickupPayrollQueueChanged(){
 }
 function _clickupPayrollMonth(r){
   var i=(r&&r.info)||{}, d=String(i.tglBayar||i.tglAkhir||i.tglMulai||r.submittedAt||i.tanggal||'');
+  var indo={januari:'January',februari:'February',maret:'March',april:'April',mei:'May',juni:'June',juli:'July',agustus:'August',september:'September',oktober:'October',november:'November',desember:'December'};
+  var mText=d.toLowerCase().match(/januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember/);
+  if(mText) return indo[mText[0]]||mText[0];
   var dt=d?new Date(d):new Date();
-  if(isNaN(dt.getTime())&&i.bulan) return i.bulan;
+  if(isNaN(dt.getTime())&&i.bulan) return indo[String(i.bulan||'').toLowerCase()]||i.bulan;
   var en=['January','February','March','April','May','June','July','August','September','October','November','December'];
   return en[dt.getMonth()]||'';
 }
@@ -13123,10 +13126,13 @@ function _clickupPayrollNum(v){ var n=parseFloat(v); return isNaN(n)?0:n; }
 function _clickupPayrollValues(r){
   var i=(r&&r.info)||{};
   var tanggalBayar=i.tglBayar||i.tglAkhir||i.tglMulai||i.tanggal||'';
+  var fileName='SlipGaji_'+(i.nama||'Karyawan')+'_'+String(r&&r.id||'')+'.pdf';
+  var fileUrl=(r&&r.clickupPayrollPdfUrl)||'';
   return {
     karyawan:i.nama||'',
     periodeGajian:i.tipe||i.periodeGajian||'',
-    periode:periodeLabel(i),
+    periode:_clickupPayrollMonth(r),
+    periodeSlip:periodeLabel(i),
     jabatan:i.jabatan||'',
     tanggalBayar:tanggalBayar,
     hariKerja:i.hariKerja||'',
@@ -13138,18 +13144,19 @@ function _clickupPayrollValues(r){
     potHariOff:_clickupPayrollNum(r&&r.potAbsen),
     bpjs:_clickupPayrollNum(r&&r.bpjs),
     totalIncome:_clickupPayrollNum(r&&r.kotor),
-    file:'SlipGaji_'+(i.nama||'Karyawan')+'_'+String(r&&r.id||'')+'.pdf',
+    file:fileUrl?('['+fileName+']('+fileUrl+')'):fileName,
     ajwId:String(r&&r.id||'')
   };
 }
 function _clickupPayrollMarkdown(r){
   var v=_clickupPayrollValues(r);
-  return ['## Payroll AJW','','| Field | Data |','|---|---|','| Karyawan | '+(v.karyawan||'-')+' |','| Periode Gajian | '+(v.periodeGajian||'-')+' |','| Periode | '+(v.periode||'-')+' |','| Jabatan | '+(v.jabatan||'-')+' |','| Tanggal Bayar | '+(v.tanggalBayar||'-')+' |','| Hari Kerja | '+(v.hariKerja||'-')+' |','| Gaji Pokok | Rp '+fmt(v.gajiPokok)+' |','| Upah Lembur | Rp '+fmt(v.upahLembur)+' |','| Allowance | Rp '+fmt(v.allowance)+' |','| Tunjangan/Bonus | Rp '+fmt(v.tunjanganBonus)+' |','| Pajak | Rp '+fmt(v.pajak)+' |','| Pot. Hari Off | Rp '+fmt(v.potHariOff)+' |','| BPJS | Rp '+fmt(v.bpjs)+' |','| TOTAL INCOME | Rp '+fmt(v.totalIncome)+' |','| File | '+v.file+' |','| ID AJW | '+v.ajwId+' |'].join('\n');
+  return ['## Payroll AJW','','| Field | Data |','|---|---|','| Karyawan | '+(v.karyawan||'-')+' |','| Periode Gajian | '+(v.periodeGajian||'-')+' |','| Periode | '+(v.periode||'-')+' |','| Periode Slip | '+(v.periodeSlip||'-')+' |','| Jabatan | '+(v.jabatan||'-')+' |','| Tanggal Bayar | '+(v.tanggalBayar||'-')+' |','| Hari Kerja | '+(v.hariKerja||'-')+' |','| Gaji Pokok | Rp '+fmt(v.gajiPokok)+' |','| Upah Lembur | Rp '+fmt(v.upahLembur)+' |','| Allowance | Rp '+fmt(v.allowance)+' |','| Tunjangan/Bonus | Rp '+fmt(v.tunjanganBonus)+' |','| Pajak | Rp '+fmt(v.pajak)+' |','| Pot. Hari Off | Rp '+fmt(v.potHariOff)+' |','| BPJS | Rp '+fmt(v.bpjs)+' |','| TOTAL INCOME | Rp '+fmt(v.totalIncome)+' |','| File | '+v.file+' |','| ID AJW | '+v.ajwId+' |'].join('\n');
 }
 function _clickupPayrollCustomFields(r){
   var fields=_clickupPayrollFieldsByKey(), v=_clickupPayrollValues(r), out=[];
   Object.keys(v).forEach(function(k){
     if(!fields[k]) return;
+    if(k==='periodeSlip') return;
     if(k==='file') return;
     var type=String((fields[k]&&fields[k].type)||'').toLowerCase();
     if(type==='attachment'||type==='file'||type==='files') return;
@@ -13196,14 +13203,20 @@ function _clickupPayrollPdfDataUrl(r){
 function _clickupPayrollUploadPdf(r,taskId){
   if(!r||!taskId) return Promise.resolve();
   var uploaded=r.clickupPayrollAttachmentKeys||{}, key='slip-'+String(r.id||'')+'-'+_clickupHashText(_clickupPayrollTaskName(r));
-  if(uploaded[key]) return Promise.resolve();
+  if(uploaded[key]&&r.clickupPayrollPdfUrl) return Promise.resolve();
   return _clickupPayrollPdfDataUrl(r).then(function(dataUrl){
     if(!dataUrl) return;
     var i=(r&&r.info)||{}, file={key:key,dataUrl:dataUrl,filename:'SlipGaji_'+(i.nama||'Karyawan')+'_'+String(r.id||Date.now())+'.pdf'};
-    return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/attachment','POST',{attachment:file}).then(function(){
+    return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/attachment','POST',{attachment:file}).then(function(res){
+      var url=(res&&(res.url||res.url_w_query||res.download_url||res.downloadUrl))||'';
+      if(!url&&res&&res.attachment) url=res.attachment.url||res.attachment.url_w_query||res.attachment.download_url||'';
+      if(!url&&res&&res.attachments&&res.attachments[0]) url=res.attachments[0].url||res.attachments[0].url_w_query||res.attachments[0].download_url||'';
+      if(!url) url='https://app.clickup.com/t/'+encodeURIComponent(taskId);
       uploaded[key]=isoNow();
       r.clickupPayrollAttachmentKeys=uploaded;
+      r.clickupPayrollPdfUrl=url;
       _clickupPayrollApplyLocal(r.id,r);
+      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupPayrollPayloadNoStatus(r,false)).catch(function(){});
     });
   });
 }
@@ -13795,8 +13808,6 @@ function _renderToolsClickupIntegration(){
     setupDetails('oauth','OAuth App','Authorize token','<div style="display:grid;gap:9px"><div class="g2"><div><label class="lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cv('CUT-CLIENT-ID',cfg.clickupClientId||''))+'"></div><div><label class="lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cv('CUT-CLIENT-SECRET',cfg.clickupClientSecret||''))+'"></div></div><div><label class="lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cv('CUT-REDIRECT',cfg.clickupRedirectUri||location.href.split('#')[0]))+'"></div><div><label class="lbl">OAuth Code</label><input id="CUT-CODE" class="fi" value="'+escAttr(cv('CUT-CODE',''))+'" placeholder="Tempel code dari URL redirect"></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btnp" onclick="_clickupToolsExchangeCode()">Tukar Code → Token</button></div></div>')+
     setupDetails('workspace','Workspace & Status','Team/Space/Folder','<div style="display:grid;gap:9px"><div class="g3"><div><label class="lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cv('CUT-TEAM',cfg.clickupTeamId||''))+'"></div><div><label class="lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cv('CUT-SPACE',cfg.clickupSpaceId||''))+'"></div><div><label class="lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cv('CUT-FOLDER',cfg.clickupFolderId||''))+'"></div></div><div class="g3"><div><label class="lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cv('CUT-ST-OPEN',cfg.clickupSupplierStatusOpen||'HUTANG'))+'"></div><div><label class="lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cv('CUT-ST-PART',cfg.clickupSupplierStatusPartial||'CICIL'))+'"></div><div><label class="lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cv('CUT-ST-PAID',cfg.clickupSupplierStatusPaid||'LUNAS'))+'"></div><div><label class="lbl">Status Pendapatan Terupload</label><input id="CUT-INCOME-DONE" class="fi" value="'+escAttr(cv('CUT-INCOME-DONE',cfg.clickupIncomeStatusDone||'DONE'))+'"></div></div></div>')+
     setupDetails('detected','List & Field Terdeteksi',lists.length+' list / '+fieldTotal+' field','<div style="max-height:240px;overflow:auto;display:grid;gap:8px">'+(lists.length?lists.slice(0,20).map(function(l){return '<div style="padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg2)"><div style="display:flex;justify-content:space-between;gap:8px"><div><b style="font-size:12px">'+esc(l.name||'-')+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(l.id||'')+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btnsm" onclick="_clickupToolsAssignList(\'hutang_supplier\',\''+escAttr(l.id)+'\')">Hutang</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_expense\',\''+escAttr(l.id)+'\')">Pengeluaran</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_income\',\''+escAttr(l.id)+'\')">Pendapatan</button></div></div></div>';}).join(''):'<div style="color:var(--tx2);font-size:12px">Belum ada list terdeteksi.</div>')+'</div>')+'</div>');
-  h+=panel('Mapping Aktif','List yang sudah dipakai AJW.',
-    '<div style="display:grid;gap:8px">'+(Object.keys(maps).length?Object.keys(maps).map(function(k){var m=maps[k]||{};return '<div style="border:1px solid var(--bd);border-radius:8px;background:var(--bg2);padding:9px"><div style="font-size:12px;font-weight:900;color:var(--tx)">'+esc(k.replace(/_/g,' '))+'</div><div style="font-size:10px;color:var(--tx2);margin-top:3px;word-break:break-all">'+esc(m.id||'-')+'</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px"><button class="btnsm" onclick="_clickupToolsSelectList(\''+escAttr(m.id||'')+'\')">Isi Hutang</button><button class="btnsm" onclick="_clickupToolsSelectExpenseList(\''+escAttr(m.id||'')+'\')">Isi Pengeluaran</button><button class="btnsm" onclick="_clickupToolsSelectIncomeList(\''+escAttr(m.id||'')+'\')">Isi Pendapatan</button></div></div>';}).join(''):'<div class="tools-empty">Belum ada mapping list manual.</div>')+'</div>');
   h+='</div>';
   return h;
 }
@@ -13859,7 +13870,7 @@ function _renderToolsClickupIntegration(){
   }else{
     h+='<div style="display:grid;grid-template-columns:minmax(330px,.72fr) minmax(0,1.28fr);gap:12px">'+
       box('Input Pusat Kontrol','Konfigurasi dan form utama. Tidak mengubah sistem sync.',details('api','Koneksi API',cfg.clickupToken?'Token tersimpan':'Token kosong',setupApi)+details('oauth','OAuth App','Authorize token',oauth)+details('workspace','Workspace & Status','Team/Space/Folder',workspace))+
-      box('Output & Mapping','Aksi sync, list terdeteksi, dan mapping aktif.','<div style="display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px;margin-bottom:11px"><button class="btnp" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupSupplierSyncNow()">Sync Hutang</button><button class="btns" onclick="_clickupExpenseSyncNow()">Sync Pengeluaran</button><button class="btns" onclick="_clickupIncomeSyncNow()">Sync Pendapatan</button><button class="btns" onclick="_clickupPayrollSyncNow()">Sync Payroll</button><button class="btns" onclick="_clickupToolsAutoDetectAll()">Auto Detect</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Mapping Field</button></div><div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,.55fr);gap:10px"><div>'+details('detected','List Terdeteksi',lists.length+' list', '<div style="max-height:330px;overflow:auto;display:grid;gap:8px">'+listRows+'</div>')+'</div><div style="display:grid;gap:8px">'+(Object.keys(maps).length?Object.keys(maps).map(function(k){var m=maps[k]||{};return '<div style="border:1px solid var(--bd);border-radius:8px;background:var(--bg2);padding:9px"><div style="font-size:12px;font-weight:900;color:var(--tx)">'+esc(k.replace(/_/g,' '))+'</div><div style="font-size:10px;color:var(--tx2);margin-top:3px;word-break:break-all">'+esc(m.id||'-')+'</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px"><button class="btnsm" onclick="_clickupToolsSelectList(\''+escAttr(m.id||'')+'\')">Isi Hutang</button><button class="btnsm" onclick="_clickupToolsSelectExpenseList(\''+escAttr(m.id||'')+'\')">Isi Pengeluaran</button><button class="btnsm" onclick="_clickupToolsSelectIncomeList(\''+escAttr(m.id||'')+'\')">Isi Pendapatan</button><button class="btnsm" onclick="_clickupToolsSelectPayrollList(\''+escAttr(m.id||'')+'\')">Isi Payroll</button></div></div>';}).join(''):'<div class="tools-empty">Belum ada mapping list manual.</div>')+'</div></div>')+
+      box('Output & Mapping','Aksi sync dan list terdeteksi. Mapping aktif disimpan dari field List ID di panel konfigurasi.','<div style="display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px;margin-bottom:11px"><button class="btnp" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupSupplierSyncNow()">Sync Hutang</button><button class="btns" onclick="_clickupExpenseSyncNow()">Sync Pengeluaran</button><button class="btns" onclick="_clickupIncomeSyncNow()">Sync Pendapatan</button><button class="btns" onclick="_clickupPayrollSyncNow()">Sync Payroll</button><button class="btns" onclick="_clickupToolsAutoDetectAll()">Auto Detect</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Mapping Field</button></div>'+details('detected','List Terdeteksi',lists.length+' list', '<div style="max-height:330px;overflow:auto;display:grid;gap:8px">'+listRows+'</div>'))+
       '</div>';
   }
   return h+'</div>';
