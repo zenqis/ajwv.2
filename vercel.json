@@ -3,7 +3,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/shopee-chat-backend/api/index.js"
+      "dest": "/api/index.js"
     },
     {
       "handle": "filesystem"
