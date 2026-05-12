@@ -11395,7 +11395,8 @@ function sbSyncSupplierAll(){
 /* ──── CLICKUP SYNC: AJW -> CLICKUP, one-way queue ──── */
 function _clickupSupplierCfg(){
   var cfg=getCfg()||{};
-  var listRaw=String(cfg.clickupSupplierListId||'').trim();
+  var maps=cfg.clickupListMappings||{};
+  var listRaw=String(cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||'').trim();
   var listId=_clickupNormalizeListId(listRaw);
   return {
     enabled:!!cfg.clickupSupplierEnabled,
@@ -12805,10 +12806,16 @@ function _clickupToolsRebuildAll(){
 }
 function _clickupToolsRepairCustomFieldValues(){
   try{
-    var cfg=getCfg()||{};
+    var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{};
     if(!cfg.clickupSupplierEnabled||!cfg.clickupToken) return;
-    if(cfg.clickupSupplierListId&&typeof _clickupSupplierQueueChanged==='function') _clickupSupplierQueueChanged();
-    if((cfg.clickupExpenseListId||((cfg.clickupListMappings||{}).finance_expense||{}).id)&&typeof _clickupExpenseQueueChanged==='function'&&typeof _finExpense!=='undefined') _clickupExpenseQueueChanged();
+    if((cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id))&&typeof _clickupSupplierQueueChanged==='function'){
+      _clickupSupplierQueueChanged();
+      if(typeof _clickupSupplierProcess==='function') _clickupSupplierProcess();
+    }
+    if((cfg.clickupExpenseListId||((maps.finance_expense||{}).id))&&typeof _clickupExpenseQueueChanged==='function'&&typeof _finExpense!=='undefined'){
+      _clickupExpenseQueueChanged();
+      if(typeof _clickupExpenseProcess==='function') _clickupExpenseProcess();
+    }
     _clickupLog('info','Auto repair ClickUp berjalan','AJW mengisi ulang custom field yang kosong/terhapus di ClickUp dari data website.');
   }catch(e){
     try{ _clickupLog('error','Auto repair ClickUp gagal',(e&&e.message)||String(e)); }catch(ex){}
