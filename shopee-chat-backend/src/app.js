@@ -94,6 +94,14 @@ function clickupToken(req, body = {}) {
   ).trim();
 }
 
+function clickupAuthorizationHeader(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return "";
+  if (/^bearer\s+/i.test(raw)) return raw;
+  if (/^pk_/i.test(raw)) return raw;
+  return `Bearer ${raw}`;
+}
+
 function clickupPath(rawPath) {
   const path = String(rawPath || "").trim();
   if (!path || path[0] !== "/" || path.includes("://")) return "";
@@ -115,7 +123,7 @@ async function handleClickupProxy(req, res) {
     const upstream = await fetch(`https://api.clickup.com/api/v2${path}`, {
       method,
       headers: {
-        Authorization: token,
+        Authorization: clickupAuthorizationHeader(token),
         "Content-Type": "application/json"
       },
       body: method === "GET" ? undefined : JSON.stringify(body.body || {})
