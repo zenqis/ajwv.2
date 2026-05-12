@@ -1,0 +1,42 @@
+﻿<!DOCTYPE html>
+<html lang="id"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AJW Light Theme Preview</title>
+  <style>
+    html,body{margin:0;height:100%;background:#F7F6F3}
+    iframe{width:1600px;height:1200px;border:0;display:block;margin:0 auto;background:#F7F6F3}
+  </style>
+</head>
+<body>
+  <iframe id="appFrame" src="index.html" title="AJW Preview"></iframe>
+  <script>
+    (function(){
+      var target=(location.hash||'#dash').replace(/^#/,'') || 'dash';
+      try{
+        localStorage.setItem('ajw_session', JSON.stringify({ role:'admin', user:'Preview Admin', time:Date.now() }));
+      }catch(e){}
+      var frame=document.getElementById('appFrame');
+      frame.onload=function(){
+        try{
+          var w=frame.contentWindow;
+          function activate(){
+            try{
+              if(target==='genimg'){
+                if(typeof w._navTo==='function') w._navTo('tools');
+                if(typeof w._renderTools==='function') w._renderTools('genimg');
+              }else if(typeof w._navTo==='function'){
+                w._navTo(target);
+              }
+            }catch(err){}
+          }
+          setTimeout(activate, 1200);
+          setTimeout(activate, 2500);
+        }catch(err){}
+      };
+      frame.src='index.html';
+    })();
+  </script>
+
+
+</body></html>
