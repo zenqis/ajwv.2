@@ -8923,9 +8923,9 @@ function _renderTools(sub){
   shell.className='tools-standard-shell';
   content.className='tools-standard-content tools-sub-'+sub;
   var h='';
-  h+='<div class="tools-page-head"><div><div class="tools-page-title">Tools</div><div class="tools-page-sub">Pusat kerja operasional material, picking list, refund, komplain, request, revisi deskripsi, generate image, dan pesan blast.</div></div><div class="tools-page-meta"><span class="chip">11 tab</span><span class="chip">Compact</span></div></div>';
+  h+='<div class="tools-page-head"><div><div class="tools-page-title">Tools</div><div class="tools-page-sub">Pusat kerja operasional material, picking list, refund, komplain, request, revisi deskripsi, generate image, ClickUp, dan pesan blast.</div></div><div class="tools-page-meta"><span class="chip">12 tab</span><span class="chip">Compact</span></div></div>';
   h+='<div class="tools-tabbar">';
-  [['dash','Dashboard'],['genimg','Generate Image'],['materials','Belanja Material'],['pick','Picking List'],['rumus','Rumus Tali GF'],['refund','Pengembalian Dana'],['complaint','Komplain'],['request','Request'],['desc','Revisi Deskripsi'],['blast','Pesan Blast'],['blastmkt','Blast Marketing']].forEach(function(s){
+  [['dash','Dashboard'],['genimg','Generate Image'],['materials','Belanja Material'],['pick','Picking List'],['rumus','Rumus Tali GF'],['refund','Pengembalian Dana'],['complaint','Komplain'],['request','Request'],['desc','Revisi Deskripsi'],['clickup','ClickUp Integration'],['blast','Pesan Blast'],['blastmkt','Blast Marketing']].forEach(function(s){
     h+='<button class="'+(sub===s[0]?'active':'')+'" onclick="_renderTools(\''+s[0]+'\')">'+s[1]+'</button>';
   });
   h+='</div>';
@@ -8941,6 +8941,10 @@ function _renderTools(sub){
   }
   if(sub==='genimg'){
     content.innerHTML=_renderToolsGenerateImage();
+    return;
+  }
+  if(sub==='clickup'){
+    content.innerHTML=typeof _renderToolsClickupIntegration==='function'?_renderToolsClickupIntegration():'<div class="card">ClickUp Integration belum siap.</div>';
     return;
   }
   if(sub==='pick'){
