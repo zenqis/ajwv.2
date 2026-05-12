@@ -10,9 +10,9 @@ function _renderTools(sub){
   shell.className='tools-standard-shell';
   content.className='tools-standard-content tools-sub-'+sub;
   var h='';
-  h+='<div class="card tools-page-head" style="margin-bottom:12px;background:linear-gradient(135deg,rgba(240,197,106,.08),rgba(143,208,255,.04))"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:800;color:#F0C56A">Tools</div><div style="font-size:12px;color:var(--tx2);margin-top:4px;max-width:860px">Pusat kerja operasional untuk material, picking list, refund, komplain, request, revisi deskripsi, dan pesan blast.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip">10 tab</span><span class="chip">Standar compact</span></div></div></div>';
+  h+='<div class="card tools-page-head" style="margin-bottom:12px;background:linear-gradient(135deg,rgba(240,197,106,.08),rgba(143,208,255,.04))"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:800;color:#F0C56A">Tools</div><div style="font-size:12px;color:var(--tx2);margin-top:4px;max-width:860px">Pusat kerja operasional untuk material, picking list, refund, komplain, request, revisi deskripsi, ClickUp, dan pesan blast.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip">11 tab</span><span class="chip">Standar compact</span></div></div></div>';
   h+='<div class="card" style="margin-bottom:12px"><div class="tools-tabbar" style="display:flex;gap:8px;flex-wrap:wrap">';
-  [['dash','Dashboard'],['materials','Belanja Material'],['pick','Picking List'],['rumus','Rumus Tali GF'],['refund','Pengembalian Dana'],['complaint','Komplain'],['request','Request'],['desc','Revisi Deskripsi'],['blast','Pesan Blast'],['blastmkt','Blast Marketing']].forEach(function(s){
+  [['dash','Dashboard'],['materials','Belanja Material'],['pick','Picking List'],['rumus','Rumus Tali GF'],['refund','Pengembalian Dana'],['complaint','Komplain'],['request','Request'],['desc','Revisi Deskripsi'],['clickup','ClickUp Integration'],['blast','Pesan Blast'],['blastmkt','Blast Marketing']].forEach(function(s){
     h+='<button class="'+(sub===s[0]?'btnp':'btns')+'" onclick="_renderTools(\''+s[0]+'\')" style="padding:8px 12px">'+s[1]+'</button>';
   });
   h+='</div></div>';
@@ -24,6 +24,10 @@ function _renderTools(sub){
   }
   if(sub==='dash'){
     content.innerHTML=_renderToolsDashboard();
+    return;
+  }
+  if(sub==='clickup'){
+    content.innerHTML=typeof _renderToolsClickupIntegration==='function'?_renderToolsClickupIntegration():'<div class="card">ClickUp Integration belum siap.</div>';
     return;
   }
   if(sub==='pick'){
