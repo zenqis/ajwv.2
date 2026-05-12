@@ -11398,6 +11398,21 @@ function _clickupSupplierCfg(){
   var maps=cfg.clickupListMappings||{};
   var listRaw=String(cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||'').trim();
   var listId=_clickupNormalizeListId(listRaw);
+  if(listId&&!_clickupSupplierListIsValid(listId)){
+    var best=_clickupFindBestSupplierList();
+    if(best&&best.id){
+      listId=_clickupNormalizeListId(best.id);
+      listRaw=listId;
+      cfg.clickupSupplierListId=listId;
+      cfg.clickupListMappings=cfg.clickupListMappings||{};
+      cfg.clickupListMappings.hutang_supplier={key:'hutang_supplier',id:listId,updatedAt:isoNow()};
+      saveCfg(cfg);
+      _clickupLog('warn','List Hutang Supplier diperbaiki otomatis','Mapping lama bukan list Hutang Supplier. Dipindah ke '+(best.name||'Hutang Supplier')+' / '+listId+'.');
+    }else{
+      listId='';
+      _clickupLog('error','List Hutang Supplier salah','Mapping sekarang bukan list Hutang Supplier. Klik Auto Detect Semua lalu pilih tombol Hutang pada list Hutang Supplier.');
+    }
+  }
   return {
     enabled:!!cfg.clickupSupplierEnabled,
     token:String(cfg.clickupToken||'').trim(),
@@ -11425,29 +11440,46 @@ function _clickupListIdFallback(v){
 function _clickupNormName(v){
   return String(v||'').toLowerCase().replace(/\([^)]*\)/g,' ').replace(/[^a-z0-9]+/g,' ').trim();
 }
+function _clickupFindDetectedList(id){
+  var cfg=getCfg()||{}, lists=cfg.clickupDetectedLists||[], sid=String(_clickupNormalizeListId(id)||'');
+  return (lists||[]).filter(function(l){return String(l&&l.id)===sid;})[0]||null;
+}
+function _clickupListText(l){
+  return _clickupNormName([l&&l.name,l&&l.folder,l&&l.space,l&&l.team].filter(Boolean).join(' '));
+}
+function _clickupSupplierListIsValid(id){
+  var l=_clickupFindDetectedList(id);
+  if(!l) return true;
+  var t=_clickupListText(l);
+  return (t.indexOf('hutang')>=0&&t.indexOf('supplier')>=0)||(t.indexOf('nota')>=0&&t.indexOf('supplier')>=0);
+}
+function _clickupFindBestSupplierList(){
+  var cfg=getCfg()||{}, lists=cfg.clickupDetectedLists||[];
+  return (lists||[]).filter(function(l){return _clickupSupplierListIsValid(l&&l.id);})[0]||null;
+}
 function _clickupSupplierFieldAliases(){
   return {
     supplier:['supplier','nama supplier'],
-    bulan:['bulan nota','bulan','periode nota','periode'],
-    periode:['periode','bulan nota','bulan'],
-    tanggalNota:['tanggal nota','tgl nota','tanggal'],
-    noDok:['no dokumen','nomor dokumen','no document','dokumen'],
-    kode:['kode','kode nota'],
-    detailNota:['detail nota','rincian nota','nilai detail nota'],
-    totalNota:['total nota','total nota 1','nilai nota','nominal nota'],
-    akumulasiTotalNota:['akumulasi total nota','akumulasi nota'],
-    totalBayar:['total bayar','rekap bayar','terbayar'],
-    bayarNota:['bayar nota','pembayaran nota','bayar'],
-    detailBayar:['detail bayar','rincian bayar','history bayar','bayar nota'],
+    bulan:[],
+    periode:['periode'],
+    tanggalNota:['tanggal nota'],
+    noDok:['no dokumen'],
+    kode:['kode'],
+    detailNota:['detail nota'],
+    totalNota:['total nota'],
+    akumulasiTotalNota:[],
+    totalBayar:[],
+    bayarNota:[],
+    detailBayar:['detail bayar'],
     hutang:[],
-    sisaNota:['sisa nota','saldo nota','selisih nota'],
-    sisaHutang:['sisa hutang','saldo hutang','hutang tersisa'],
-    relHutangNota:['rel hutang nota','relasi hutang nota'],
-    status:['status hutang','status'],
-    tanggalBayar:['tanggal bayar','tgl bayar'],
-    jumlahBayar:['jumlah bayar','nominal bayar'],
-    keterangan:['keterangan','catatan'],
-    ajwId:['ajw id','id ajw']
+    sisaNota:['sisa nota'],
+    sisaHutang:[],
+    relHutangNota:[],
+    status:['status'],
+    tanggalBayar:[],
+    jumlahBayar:[],
+    keterangan:[],
+    ajwId:[]
   };
 }
 function _clickupSupplierFieldMetaLoad(){
@@ -11484,12 +11516,6 @@ function _clickupSupplierAutoMapFields(fields){
             if(isRelationKey) return type==='tasks'&&_clickupNormName(f&&f.name)===want;
             if(type==='tasks'||type==='relationship'||type==='dependency'||type==='users') return false;
             return _clickupNormName(f&&f.name)===want;
-          })[0]||
-          (fields||[]).filter(function(f){
-            var type=String((f&&f.type)||'').toLowerCase();
-            if(isRelationKey) return type==='tasks'&&_clickupNormName(f&&f.name).indexOf(want)>=0;
-            if(type==='tasks'||type==='relationship'||type==='dependency'||type==='users') return false;
-            return _clickupNormName(f&&f.name).indexOf(want)>=0;
           })[0];
       return !!hit;
     });
@@ -12637,6 +12663,16 @@ function _clickupToolsSaveCfg(){
   cfg.clickupExpenseListId=val('CUT-LIST-EXPENSE')||cfg.clickupExpenseListId||'';
   cfg.clickupSupplierListId=_clickupNormalizeListId(cfg.clickupSupplierListId);
   cfg.clickupExpenseListId=_clickupNormalizeListId(cfg.clickupExpenseListId);
+  if(cfg.clickupSupplierListId&&!_clickupSupplierListIsValid(cfg.clickupSupplierListId)){
+    var bestSup=_clickupFindBestSupplierList();
+    if(bestSup&&bestSup.id){
+      cfg.clickupSupplierListId=_clickupNormalizeListId(bestSup.id);
+      _clickupLog('warn','List Hutang Supplier diganti otomatis','Input lama bukan list Hutang Supplier. Dipakai '+(bestSup.name||'Hutang Supplier')+' / '+cfg.clickupSupplierListId+'.');
+    }else{
+      _clickupLog('error','List Hutang Supplier ditolak','List yang dipilih bukan Hutang Supplier. Klik Auto Detect Semua lalu pilih tombol Hutang pada list Hutang Supplier.');
+      cfg.clickupSupplierListId='';
+    }
+  }
   cfg.clickupListMappings=cfg.clickupListMappings||{};
   if(cfg.clickupSupplierListId) cfg.clickupListMappings.hutang_supplier={key:'hutang_supplier',id:cfg.clickupSupplierListId,updatedAt:isoNow()};
   if(cfg.clickupExpenseListId) cfg.clickupListMappings.finance_expense={key:'finance_expense',id:cfg.clickupExpenseListId,updatedAt:isoNow()};
@@ -12786,6 +12822,12 @@ function _clickupToolsSelectExpenseList(id){
 function _clickupToolsAssignList(key,id){
   var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{};
   id=_clickupNormalizeListId(id||'');
+  if(key==='hutang_supplier'&&id&&!_clickupSupplierListIsValid(id)){
+    var list=_clickupFindDetectedList(id)||{};
+    _clickupLog('error','List Hutang Supplier ditolak','List "'+(list.name||id)+'" bukan Hutang Supplier. Mapping tidak disimpan.');
+    toast('List ini bukan Hutang Supplier','error',6500);
+    return;
+  }
   maps[key]={key:key,id:id||'',updatedAt:isoNow()};
   cfg.clickupListMappings=maps;
   if(key==='hutang_supplier') cfg.clickupSupplierListId=id||cfg.clickupSupplierListId||'';
