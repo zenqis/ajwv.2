@@ -774,6 +774,7 @@ function genInvoiceSupplier(idx){
   h+='<div style="display:flex;gap:7px;justify-content:flex-end;margin-bottom:9px">';
   h+='<button class="btna" onclick="genPDF(\'INV-CONTENT\',\'Invoice_GoldenFish_'+esc((d.bulan||'')+d.tahun)+'\')" style="background:#E65100;padding:7px 12px">PDF</button>';
   h+='<button class="btna" onclick="window.print()" style="background:#546E7A;padding:7px 11px">Print</button>';
+  h+='<button class="btna" onclick="document.getElementById(\'INV-MODAL\').remove();deleteSupplierRecord('+idx+')" style="background:#C62828;padding:7px 11px">Hapus Nota</button>';
   h+='<button class="btna" onclick="document.getElementById(\'INV-MODAL\').remove()" style="background:#C62828;padding:7px 11px">&times;</button></div>';
   h+='<div id="INV-CONTENT" style="background:#fff;border-radius:10px;overflow:hidden;border:2px solid #C9D5E2;color:#17202A;-webkit-print-color-adjust:exact;print-color-adjust:exact">';
   /* Invoice header */
@@ -4967,7 +4968,8 @@ function _supHutangV2(){
       h+='</div>';
       h+='<div class="sup-hutang-meta"><span>Nota <b>Rp '+fmt(tN)+'</b></span><span>Bayar <b>Rp '+fmt(tB)+'</b></span><span>Saldo <b>Rp '+fmt(saldo)+'</b></span></div>';
       /* Dropdown action button */
-      h+='<div style="position:relative;display:inline-block">';
+      h+='<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;position:relative">';
+      h+='<button onclick="deleteSupplierRecord('+oi+')" class="btns" style="padding:0 10px;height:30px;font-size:11px;color:#B91C1C;border-color:#FECACA;background:#FEF2F2">Hapus</button>';
       h+='<button onclick="var m=document.getElementById(\'NOTA-DD-'+oi+'\');m.style.display=m.style.display===\'block\'?\'none\':\'block\'" class="btns" style="padding:0 10px;height:30px;font-size:11px">Aksi &#9660;</button>';
       h+='<div id="NOTA-DD-'+oi+'" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid rgba(219,151,76,.28);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:180px;overflow:hidden">';
       if(!lunas) h+='<button onclick="document.getElementById(\'NOTA-DD-'+oi+'\').style.display=\'none\';_openBayarModal('+oi+')" style="width:100%;padding:10px 14px;border:none;background:var(--bg2);color:var(--tx);cursor:pointer;font-size:11px;text-align:left;border-bottom:1px solid rgba(255,255,255,.06);font-weight:700">Bayar Nota</button>';
