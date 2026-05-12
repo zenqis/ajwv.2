@@ -80,6 +80,73 @@ app.use(express.json({ limit: "30mb" }));
 app.use(express.text({ type: "*/*", limit: "30mb" }));
 registerAiGatewayRoutes(app);
 
+function clickupToken(req, body = {}) {
+  return String(
+    body.token ||
+      req.get("x-clickup-token") ||
+      process.env.CLICKUP_TOKEN ||
+      ""
+  ).trim();
+}
+
+function clickupPath(rawPath) {
+  const path = String(rawPath || "").trim();
+  if (!path || path[0] !== "/" || path.includes("://")) return "";
+  if (!/^\/(team|space|folder|list|task|oauth)(\/|\?|$)/.test(path)) return "";
+  return path;
+}
+
+app.post("/api/clickup/proxy", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const path = clickupPath(body.path);
+    if (!path) return res.status(400).json({ ok: false, error: "Path ClickUp tidak valid" });
+    const token = clickupToken(req, body);
+    if (!token) return res.status(400).json({ ok: false, error: "Token ClickUp belum diisi" });
+    const method = String(body.method || "GET").toUpperCase();
+    if (!["GET", "POST", "PUT", "DELETE"].includes(method)) {
+      return res.status(400).json({ ok: false, error: "Method ClickUp tidak valid" });
+    }
+    const upstream = await fetch(`https://api.clickup.com/api/v2${path}`, {
+      method,
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json"
+      },
+      body: method === "GET" ? undefined : JSON.stringify(body.body || {})
+    });
+    const text = await upstream.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+    return res.status(upstream.status).json(data);
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: err.message || "ClickUp proxy gagal" });
+  }
+});
+
+app.post("/api/clickup/oauth/token", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const clientId = String(body.client_id || body.clientId || "").trim();
+    const clientSecret = String(body.client_secret || body.clientSecret || "").trim();
+    const code = String(body.code || "").trim();
+    if (!clientId || !clientSecret || !code) {
+      return res.status(400).json({ ok: false, error: "Client ID, Client Secret, dan code wajib diisi" });
+    }
+    const upstream = await fetch("https://api.clickup.com/api/v2/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code })
+    });
+    const text = await upstream.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+    return res.status(upstream.status).json(data);
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: err.message || "OAuth ClickUp gagal" });
+  }
+});
+
 function normalizeXaiApiKey(req, body = {}) {
   return String(
     body.apiKey ||
