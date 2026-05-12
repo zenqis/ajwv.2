@@ -11435,14 +11435,14 @@ function _clickupSupplierFieldAliases(){
     kode:['kode','kode nota'],
     detailNota:['detail nota','rincian nota','nilai detail nota'],
     totalNota:['total nota','total nota 1','nilai nota','nominal nota'],
-    akumulasiTotalNota:['akumulasi total nota','total hutang','akumulasi nota'],
-    totalBayar:['history total bayar','total bayar','rekap bayar','terbayar'],
+    akumulasiTotalNota:['akumulasi total nota','akumulasi nota'],
+    totalBayar:['total bayar','rekap bayar','terbayar'],
     bayarNota:['bayar nota','pembayaran nota','bayar'],
     detailBayar:['detail bayar','rincian bayar','history bayar','bayar nota'],
-    hutang:['wref','hutang','saldo hutang','sisa hutang'],
+    hutang:[],
     sisaNota:['sisa nota','saldo nota','selisih nota'],
     sisaHutang:['sisa hutang','saldo hutang','hutang tersisa'],
-    relHutangNota:['rel hutang nota','relasi hutang nota','hutang nota'],
+    relHutangNota:['rel hutang nota','relasi hutang nota'],
     status:['status hutang','status'],
     tanggalBayar:['tanggal bayar','tgl bayar'],
     jumlahBayar:['jumlah bayar','nominal bayar'],
@@ -11459,7 +11459,12 @@ function _clickupSupplierFieldMetaSave(meta){
 function _clickupSupplierFieldsByKey(){
   var cfg=_clickupSupplierCfg(), manual=cfg.fields||{}, meta=_clickupSupplierFieldMetaLoad(), out={};
   Object.keys(manual).forEach(function(k){
-    if(manual[k]) out[k]=meta[manual[k]]||{id:manual[k],name:k,type:'text',type_config:{}};
+    if(manual[k]){
+      var f=meta[manual[k]]||{id:manual[k],name:k,type:'text',type_config:{}};
+      var type=String((f&&f.type)||'').toLowerCase();
+      if(k!=='relHutangNota'&&(type==='tasks'||type==='relationship'||type==='dependency'||type==='users')) return;
+      out[k]=f;
+    }
   });
   return out;
 }
@@ -11471,10 +11476,21 @@ function _clickupSupplierAutoMapFields(fields){
   });
   Object.keys(aliases).forEach(function(key){
     var hit=null;
+    var isRelationKey=(key==='relHutangNota');
     aliases[key].some(function(alias){
       var want=_clickupNormName(alias);
-      hit=(fields||[]).filter(function(f){ return _clickupNormName(f&&f.name)===want; })[0]||
-          (fields||[]).filter(function(f){ return _clickupNormName(f&&f.name).indexOf(want)>=0; })[0];
+      hit=(fields||[]).filter(function(f){
+            var type=String((f&&f.type)||'').toLowerCase();
+            if(isRelationKey) return type==='tasks'&&_clickupNormName(f&&f.name)===want;
+            if(type==='tasks'||type==='relationship'||type==='dependency'||type==='users') return false;
+            return _clickupNormName(f&&f.name)===want;
+          })[0]||
+          (fields||[]).filter(function(f){
+            var type=String((f&&f.type)||'').toLowerCase();
+            if(isRelationKey) return type==='tasks'&&_clickupNormName(f&&f.name).indexOf(want)>=0;
+            if(type==='tasks'||type==='relationship'||type==='dependency'||type==='users') return false;
+            return _clickupNormName(f&&f.name).indexOf(want)>=0;
+          })[0];
       return !!hit;
     });
     if(hit) mapped[key]=hit.id;
@@ -11496,7 +11512,9 @@ function _clickupSupplierLoadFieldMap(){
     var fields=data.fields||[];
     var mapped=_clickupSupplierAutoMapFields(fields);
     var cfg=getCfg()||{};
-    cfg.clickupSupplierFields=Object.assign({}, cfg.clickupSupplierFields||{}, mapped);
+    var next=Object.assign({},cfg.clickupSupplierFields||{});
+    Object.keys(_clickupSupplierFieldAliases()).forEach(function(k){ delete next[k]; });
+    cfg.clickupSupplierFields=Object.assign(next,mapped);
     saveCfg(cfg);
     _clickupSupplierLogMissingFields(fields,mapped);
     return mapped;
@@ -11504,14 +11522,17 @@ function _clickupSupplierLoadFieldMap(){
 }
 function _clickupSupplierLogMissingFields(fields,mapped){
   var names=(fields||[]).map(function(f){return _clickupNormName(f&&f.name);});
-  var required=['supplier','periode','tanggalNota','noDok','kode','detailNota','totalNota','totalBayar','detailBayar','sisaNota','status'];
+  var required=['supplier','periode','tanggalNota','noDok','kode','detailNota','totalNota','detailBayar','sisaNota','status'];
   var aliases=_clickupSupplierFieldAliases();
   var missing=required.filter(function(k){
     if(mapped&&mapped[k]) return false;
     return !(aliases[k]||[]).some(function(a){return names.indexOf(_clickupNormName(a))>=0;});
   });
-  if(missing.length) _clickupLog('warn','Custom field ClickUp kurang',missing.join(', '));
-  else _clickupLog('success','Custom field ClickUp lengkap','Field utama hutang supplier terdeteksi.');
+  var cfg=getCfg()||{}, listId=(_clickupSupplierCfg()||{}).listId||'', lists=cfg.clickupDetectedLists||[];
+  var list=(lists||[]).filter(function(l){return String(l.id)===String(listId);})[0]||{};
+  var listLabel=(list.name?list.name+' / ':'')+listId;
+  if(missing.length) _clickupLog('warn','Custom field Hutang Supplier kurang',missing.join(', ')+' | List: '+(listLabel||'-')+' | Field terbaca: '+((fields||[]).map(function(f){return f.name||'-';}).join(', ')||'-'));
+  else _clickupLog('success','Custom field Hutang Supplier lengkap','List: '+(listLabel||'-')+' | Field tabel utama terdeteksi.');
 }
 function _clickupSupplierReady(){
   var c=_clickupSupplierCfg();
@@ -11707,6 +11728,7 @@ function _clickupSupplierCustomFields(d){
 function _clickupSupplierFieldValue(field, value){
   var type=String((field&&field.type)||'').toLowerCase();
   var cfg=(field&&field.type_config)||{};
+  if(type==='relationship'||type==='dependency'||type==='users') return undefined;
   if(type==='date'){
     var d=String(value||'').trim();
     var ts=d?Date.parse(d):NaN;
