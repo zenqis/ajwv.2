@@ -11534,10 +11534,12 @@ function _clickupSupplierStatus(d){
 }
 function _clickupSupplierRequest(path, method, body){
   var c=_clickupSupplierCfg();
-  return fetch('https://api.clickup.com/api/v2'+path,{
-    method:method||'GET',
-    headers:{'Authorization':c.token,'Content-Type':'application/json'},
-    body:body?JSON.stringify(body):undefined
+  var cfg=getCfg()||{};
+  var proxy=String(cfg.clickupProxyUrl||'/api/clickup/proxy').trim()||'/api/clickup/proxy';
+  return fetch(proxy,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({token:c.token,path:path,method:method||'GET',body:body||{}})
   }).then(function(r){
     return r.text().then(function(txt){
       var data={}; try{data=txt?JSON.parse(txt):{};}catch(e){data={raw:txt};}
@@ -11686,6 +11688,7 @@ function _clickupAdminSaveCfg(){
   cfg.clickupSpaceId=val('CU-SPACE')||cfg.clickupSpaceId||'';
   cfg.clickupFolderId=val('CU-FOLDER')||cfg.clickupFolderId||'';
   cfg.clickupSupplierListId=val('CU-LIST')||cfg.clickupSupplierListId||'';
+  cfg.clickupProxyUrl=val('CU-PROXY')||cfg.clickupProxyUrl||'/api/clickup/proxy';
   cfg.clickupSupplierEnabled=!!(document.getElementById('CU-EN')&&document.getElementById('CU-EN').checked);
   cfg.clickupSupplierStatusOpen=val('CU-ST-OPEN');
   cfg.clickupSupplierStatusPartial=val('CU-ST-PART');
@@ -11707,7 +11710,8 @@ function _clickupAdminExchangeCode(){
   var cfg=getCfg()||{}, code=((document.getElementById('CU-CODE')||{}).value||'').trim();
   if(!cfg.clickupClientId||!cfg.clickupClientSecret||!code){ toast('Isi Client ID, Client Secret, dan OAuth Code','warn'); return; }
   var body={client_id:cfg.clickupClientId,client_secret:cfg.clickupClientSecret,code:code};
-  fetch('https://api.clickup.com/api/v2/oauth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  var proxy=String((getCfg()||{}).clickupProxyUrl||'/api/clickup/proxy').replace(/\/proxy(?:\?.*)?$/,'/oauth/token');
+  fetch(proxy,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d};});})
     .then(function(res){
       if(!res.ok||!res.data.access_token) throw new Error((res.data&&(res.data.err||res.data.error||res.data.message))||'OAuth gagal');
@@ -13919,6 +13923,7 @@ renderAdmin = function(){
     h += '<div class="card" style="padding:14px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:13px;font-weight:800;color:var(--navy)">ClickUp Sync Hutang Supplier</div><div style="font-size:11px;color:var(--tx2);margin-top:4px;line-height:1.6">AJW → ClickUp satu arah. Satu nota supplier menjadi satu task ClickUp. Client ID/Secret dari OAuth app disimpan di sini, tapi data baru bisa dikirim setelah ada Access Token atau Personal Token.</div></div><label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--tx2);font-weight:800"><input id="CU-EN" type="checkbox" '+(cfg.clickupSupplierEnabled?'checked':'')+'>Aktif</label></div>';
     h += '<div class="g2" style="margin-bottom:9px"><div><label class="lbl">Client ID</label><input id="CU-CLIENT-ID" class="fi" value="'+esc(cfg.clickupClientId||'')+'" placeholder="Client ID ClickUp OAuth App"></div><div><label class="lbl">Client Secret</label><input id="CU-CLIENT-SECRET" class="fi" type="password" value="'+esc(cfg.clickupClientSecret||'')+'" placeholder="Client Secret"></div></div>';
     h += '<div class="g2" style="margin-bottom:9px"><div><label class="lbl">Redirect URI</label><input id="CU-REDIRECT" class="fi" value="'+esc(cfg.clickupRedirectUri||location.href.split('#')[0])+'" placeholder="Harus sama dengan redirect app ClickUp"></div><div><label class="lbl">OAuth Code</label><input id="CU-CODE" class="fi" placeholder="Tempel code dari URL redirect setelah authorize"></div></div>';
+    h += '<div style="margin-bottom:9px"><label class="lbl">Proxy API URL</label><input id="CU-PROXY" class="fi" value="'+esc(cfg.clickupProxyUrl||'/api/clickup/proxy')+'" placeholder="/api/clickup/proxy atau https://domain-vercel.com/api/clickup/proxy"><div style="font-size:10px;color:var(--tx2);margin-top:4px">Kalau web dibuka dari file/static lokal, isi URL Vercel penuh agar tidak gagal fetch.</div></div>';
     h += '<div class="g2" style="margin-bottom:9px"><div><label class="lbl">Personal Token / OAuth Access Token</label><input id="CU-TOKEN" class="fi" type="password" value="'+esc(cfg.clickupToken||'')+'" placeholder="pk_... atau access token OAuth"></div><div><label class="lbl">List ID Hutang Supplier</label><input id="CU-LIST" class="fi" value="'+esc(cfg.clickupSupplierListId||'')+'" placeholder="ID list ClickUp tujuan"></div></div>';
     h += '<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Team / Workspace ID</label><input id="CU-TEAM" class="fi" value="'+esc(cfg.clickupTeamId||'')+'" placeholder="opsional untuk load space"></div><div><label class="lbl">Space ID</label><input id="CU-SPACE" class="fi" value="'+esc(cfg.clickupSpaceId||'')+'" placeholder="opsional untuk load list"></div><div><label class="lbl">Folder ID</label><input id="CU-FOLDER" class="fi" value="'+esc(cfg.clickupFolderId||'')+'" placeholder="opsional untuk load list"></div></div>';
     h += '<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Status Belum</label><input id="CU-ST-OPEN" class="fi" value="'+esc(cfg.clickupSupplierStatusOpen||'')+'" placeholder="opsional"></div><div><label class="lbl">Status Sebagian</label><input id="CU-ST-PART" class="fi" value="'+esc(cfg.clickupSupplierStatusPartial||'')+'" placeholder="opsional"></div><div><label class="lbl">Status Lunas</label><input id="CU-ST-PAID" class="fi" value="'+esc(cfg.clickupSupplierStatusPaid||'')+'" placeholder="opsional"></div></div>';

@@ -1,5 +1,7 @@
 import "dotenv/config";
 import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
 import { registerAiGatewayRoutes } from "./ai/controller.js";
@@ -74,6 +76,9 @@ const secretSeed = String(
     "ajw_local_secret_seed"
 );
 const encryptKey = crypto.createHash("sha256").update(secretSeed).digest();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, "../..");
 
 app.use(cors());
 app.use(express.json({ limit: "30mb" }));
@@ -2227,6 +2232,11 @@ app.post("/api/chat/ai/autonomous/run", async (req, res) => {
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
   }
+});
+
+app.use(express.static(repoRoot));
+app.get(/^\/(?!api\/).*/, (_req, res) => {
+  res.sendFile(path.join(repoRoot, "index.html"));
 });
 
 export default app;
