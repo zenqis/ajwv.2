@@ -11423,14 +11423,18 @@ function _clickupNormName(v){
 function _clickupSupplierFieldAliases(){
   return {
     supplier:['supplier','nama supplier'],
-    bulan:['bulan nota','bulan','periode nota'],
+    bulan:['bulan nota','bulan','periode nota','periode'],
+    periode:['periode','bulan nota','bulan'],
     tanggalNota:['tanggal nota','tgl nota','tanggal'],
     noDok:['no dokumen','nomor dokumen','no document','dokumen'],
     kode:['kode','kode nota'],
-    totalNota:['total nota','nilai nota','nominal nota'],
+    detailNota:['detail nota','rincian nota','nilai detail nota'],
+    totalNota:['total nota','total nota 1','nilai nota','nominal nota'],
     akumulasiTotalNota:['akumulasi total nota','total hutang','akumulasi nota'],
     totalBayar:['history total bayar','total bayar','rekap bayar','terbayar'],
+    bayarNota:['bayar nota','pembayaran nota','bayar'],
     hutang:['wref','hutang','saldo hutang','sisa hutang'],
+    sisaHutang:['sisa hutang','saldo hutang','hutang tersisa'],
     relHutangNota:['rel hutang nota','relasi hutang nota','hutang nota'],
     status:['status hutang','status'],
     tanggalBayar:['tanggal bayar','tgl bayar'],
@@ -11544,6 +11548,32 @@ function _clickupSupplierTotals(d){
   var saldo=totalNota-totalBayar;
   return {nota:totalNota,bayar:totalBayar,saldo:saldo,status:saldo<=0?'Lunas':(totalBayar>0?'Sebagian':'Belum Bayar')};
 }
+function _clickupSupplierStatusName(d){
+  var t=_clickupSupplierTotals(d);
+  if(t.saldo<=0) return 'LUNAS';
+  if(t.bayar>0) return 'CICIL';
+  return 'HUTANG';
+}
+function _clickupSupplierPeriod(d){
+  var map={januari:'January',februari:'February',maret:'March',april:'April',mei:'May',juni:'June',juli:'July',agustus:'August',september:'September',oktober:'October',november:'November',desember:'December'};
+  var raw=String(d&&d.bulan||'').trim();
+  if(raw){
+    var key=raw.toLowerCase();
+    return map[key]||raw;
+  }
+  var mn=parseInt(d&&d.bulanNum,10)||0;
+  return ['','January','February','March','April','May','June','July','August','September','October','November','December'][mn]||'';
+}
+function _clickupSupplierNoteCalc(d, idx){
+  var notes=(d&&d.nota)||[], pays=(d&&d.bayar)||[];
+  var paid=pays.reduce(function(s,b){return s+(parseFloat(b.jumlah)||0);},0);
+  var n=notes[idx]||{};
+  var val=parseFloat(n.nilaiNetto)||0;
+  for(var i=0;i<idx;i++) paid-=parseFloat((notes[i]&&notes[i].nilaiNetto)||0)||0;
+  var bayar=Math.max(0,Math.min(val,paid));
+  var sisa=Math.max(0,val-bayar);
+  return {detail:val,bayar:bayar,sisa:sisa,status:_clickupSupplierStatusName(d)};
+}
 function _clickupSupplierTaskName(d){
   var first=(d.nota&&d.nota[0])||{};
   var doc=first.noDok?(' - '+first.noDok):'';
@@ -11592,17 +11622,21 @@ function _clickupSupplierMarkdown(d){
 function _clickupSupplierCustomFields(d){
   var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d);
   var first=(d.nota&&d.nota[0])||{}, latestPay=(d.bayar&&d.bayar[d.bayar.length-1])||{};
+  var period=_clickupSupplierPeriod(d), status=_clickupSupplierStatusName(d);
   var map={
     supplier:d.namaSupplier||'',
-    bulan:d.bulan||'',
+    bulan:period,
+    periode:period,
     tahun:d.tahun||'',
     noDok:first.noDok||'',
     tanggalNota:first.tgl||'',
     totalNota:t.nota,
     akumulasiTotalNota:t.nota,
     totalBayar:t.bayar,
+    bayarNota:t.bayar,
     hutang:t.saldo,
-    status:t.status,
+    sisaHutang:t.saldo,
+    status:status,
     tanggalBayar:latestPay.tgl||'',
     jumlahBayar:parseFloat(latestPay.jumlah)||0,
     keterangan:(d.catatan||latestPay.keterangan||first.keterangan||''),
@@ -11626,6 +11660,7 @@ function _clickupSupplierFieldValue(field, value){
     return isNaN(ts)?null:ts;
   }
   if(type==='currency'||type==='number'||type==='automatic_progress'){
+    if(value==='') return undefined;
     return parseFloat(value)||0;
   }
   if(type==='checkbox'){
@@ -11647,16 +11682,23 @@ function _clickupSupplierFieldValue(field, value){
 }
 function _clickupSupplierNoteFields(d,n,idx){
   var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d);
+  var calc=_clickupSupplierNoteCalc(d,idx);
+  var period=_clickupSupplierPeriod(d), status=_clickupSupplierStatusName(d);
   var map={
     supplier:d.namaSupplier||'',
-    bulan:(d.tahun&&d.bulanNum)?(String(d.tahun)+'-'+String(d.bulanNum).padStart(2,'0')):(d.bulan||''),
+    bulan:period,
+    periode:period,
     tanggalNota:(n&&n.tgl)||'',
     noDok:(n&&n.noDok)||'',
     kode:(n&&n.kode)||'',
-    totalNota:parseFloat((n&&n.nilaiNetto)||0)||0,
+    detailNota:calc.detail,
+    totalNota:'',
     akumulasiTotalNota:t.nota,
     totalBayar:t.bayar,
-    hutang:t.saldo,
+    bayarNota:calc.bayar,
+    hutang:calc.sisa,
+    sisaHutang:calc.sisa,
+    status:status,
     keterangan:(n&&n.keterangan)||'',
     ajwId:String(d.id||'')+'-nota-'+idx
   };
@@ -11671,6 +11713,7 @@ function _clickupSupplierNoteFields(d,n,idx){
 }
 function _clickupSupplierNoteMarkdown(d,n,idx){
   var t=_clickupSupplierTotals(d);
+  var calc=_clickupSupplierNoteCalc(d,idx);
   return [
     '## Nota Supplier AJW',
     '',
@@ -11682,18 +11725,20 @@ function _clickupSupplierNoteMarkdown(d,n,idx){
     '| No Dokumen | '+((n&&n.noDok)||'-')+' |',
     '| Kode | '+((n&&n.kode)||'-')+' |',
     '| Keterangan | '+((n&&n.keterangan)||'-')+' |',
-    '| Total Nota | Rp '+fmt(parseFloat((n&&n.nilaiNetto)||0)||0)+' |',
+    '| Detail Nota | Rp '+fmt(calc.detail)+' |',
+    '| Bayar Nota | Rp '+fmt(calc.bayar)+' |',
+    '| Sisa Nota | Rp '+fmt(calc.sisa)+' |',
     '| Akumulasi Total Nota | Rp '+fmt(t.nota)+' |',
     '| History Total Bayar | Rp '+fmt(t.bayar)+' |',
-    '| Hutang | Rp '+fmt(t.saldo)+' |',
+    '| Status Parent | '+_clickupSupplierStatusName(d)+' |',
     '| ID AJW | '+String(d.id||'')+'-nota-'+idx+' |'
   ].join('\n');
 }
 function _clickupSupplierStatus(d){
-  var c=_clickupSupplierCfg(), s=_clickupSupplierTotals(d).status;
-  if(s==='Lunas') return c.statusPaid||'';
-  if(s==='Sebagian') return c.statusPartial||'';
-  return c.statusOpen||'';
+  var c=_clickupSupplierCfg(), s=_clickupSupplierStatusName(d);
+  if(s==='LUNAS') return c.statusPaid||'LUNAS';
+  if(s==='CICIL') return c.statusPartial||'CICIL';
+  return c.statusOpen||'HUTANG';
 }
 function _clickupSupplierRequest(path, method, body){
   var c=_clickupSupplierCfg();
@@ -11710,6 +11755,38 @@ function _clickupSupplierRequest(path, method, body){
       return data;
     });
   });
+}
+function _clickupHashText(s){
+  s=String(s||'');
+  var h=0,i=0;
+  for(i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; }
+  return String(Math.abs(h));
+}
+function _clickupSupplierAttachmentImages(d){
+  var imgs=[];
+  (d.bayar||[]).forEach(function(b,i){
+    if(b&&b.bukti) imgs.push({key:'bayar-'+i+'-'+_clickupHashText(String(b.bukti).slice(0,160)),dataUrl:b.bukti,filename:'bukti-bayar-'+(d.id||'nota')+'-'+(i+1)+'.jpg'});
+  });
+  (d.buktiFoto||[]).forEach(function(img,i){
+    if(img) imgs.push({key:'foto-'+i+'-'+_clickupHashText(String(img).slice(0,160)),dataUrl:img,filename:'bukti-transfer-'+(d.id||'nota')+'-'+(i+1)+'.jpg'});
+  });
+  return imgs;
+}
+function _clickupSupplierUploadAttachments(d, taskId){
+  if(!d||!taskId) return Promise.resolve();
+  var uploaded=d.clickupAttachmentKeys||{};
+  var imgs=_clickupSupplierAttachmentImages(d).filter(function(x){return x.dataUrl&&!uploaded[x.key];});
+  var chain=Promise.resolve();
+  imgs.forEach(function(img){
+    chain=chain.then(function(){
+      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/attachment','POST',{attachment:img}).then(function(){
+        uploaded[img.key]=isoNow();
+        d.clickupAttachmentKeys=uploaded;
+        _clickupSupplierPatchLocalRow(d);
+      });
+    });
+  });
+  return chain;
 }
 function _clickupSupplierPayload(d, includeCustom){
   var t=_clickupSupplierTotals(d);
@@ -11735,6 +11812,8 @@ function _clickupSupplierNotePayload(d,n,idx,includeCustom,parentId){
     notify_all:false
   };
   if(parentId) payload.parent=parentId;
+  var st=_clickupSupplierStatus(d);
+  if(st) payload.status=st;
   var cf=includeCustom?_clickupSupplierNoteFields(d,n,idx):[];
   if(cf.length) payload.custom_fields=cf;
   return payload;
@@ -11805,6 +11884,16 @@ function _clickupSupplierUpdateRelation(parentId, ids){
   if(!parentId||!rel||String(rel.type).toLowerCase()!=='tasks'||!ids||!ids.length) return Promise.resolve();
   return _clickupSupplierRequest('/task/'+encodeURIComponent(parentId)+'/field/'+encodeURIComponent(rel.id),'POST',{value:_clickupSupplierFieldValue(rel,ids)}).catch(function(){});
 }
+function _clickupSupplierArchiveRowTasks(row){
+  if(!_clickupSupplierReady()||!row) return;
+  var ids=[];
+  if(row.clickupTaskId) ids.push(row.clickupTaskId);
+  var noteMap=(row.clickupSubtaskIds&&row.clickupSubtaskIds.nota)||{};
+  Object.keys(noteMap).forEach(function(k){ if(noteMap[k]) ids.push(noteMap[k]); });
+  ids.forEach(function(id){
+    _clickupSupplierRequest('/task/'+encodeURIComponent(id),'PUT',{archived:true}).catch(function(){});
+  });
+}
 function _clickupSupplierUpsert(d, taskId){
   var c=_clickupSupplierCfg();
   return _clickupSupplierLoadFieldMap().catch(function(){}).then(function(){
@@ -11814,8 +11903,10 @@ function _clickupSupplierUpsert(d, taskId){
         return Promise.all(cf.map(function(field){
           return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
         })).then(function(){
-          return _clickupSupplierSyncSubtasks(d,taskId).then(function(ids){
-            return _clickupSupplierUpdateRelation(taskId,ids).then(function(){ return res; });
+          return _clickupSupplierUploadAttachments(d,taskId).then(function(){
+            return _clickupSupplierSyncSubtasks(d,taskId).then(function(ids){
+              return _clickupSupplierUpdateRelation(taskId,ids).then(function(){ return res; });
+            });
           });
         });
       });
@@ -11823,8 +11914,10 @@ function _clickupSupplierUpsert(d, taskId){
     return _clickupSupplierCreateTaskInList(_clickupSupplierPayload(d,true)).then(function(res){
       var tid=res&&res.id;
       if(!tid) return res;
-      return _clickupSupplierSyncSubtasks(d,tid).then(function(ids){
-        return _clickupSupplierUpdateRelation(tid,ids).then(function(){ return res; });
+      return _clickupSupplierUploadAttachments(d,tid).then(function(){
+        return _clickupSupplierSyncSubtasks(d,tid).then(function(ids){
+          return _clickupSupplierUpdateRelation(tid,ids).then(function(){ return res; });
+        });
       });
     });
   });
@@ -11884,7 +11977,7 @@ function _clickupSupplierSaveCfg(){
   cfg.clickupSupplierStatusPartial=(document.getElementById('CU-ST-PART')||{}).value||'';
   cfg.clickupSupplierStatusPaid=(document.getElementById('CU-ST-PAID')||{}).value||'';
   var fields={};
-  ['supplier','bulan','tahun','noDok','tanggalNota','totalNota','totalBayar','hutang','status','tanggalBayar','jumlahBayar','keterangan','ajwId'].forEach(function(k){
+  ['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'].forEach(function(k){
     var el=document.getElementById('CU-F-'+k); if(el&&el.value.trim()) fields[k]=el.value.trim();
   });
   cfg.clickupSupplierFields=fields;
@@ -11903,7 +11996,7 @@ function _clickupSupplierStatusHtml(){
   var synced=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
   var failed=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
   var f=c.fields||{};
-  var fieldKeys=['supplier','bulan','tahun','noDok','tanggalNota','totalNota','totalBayar','hutang','status','tanggalBayar','jumlahBayar','keterangan','ajwId'];
+  var fieldKeys=['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'];
   var h='<div class="card" style="margin-bottom:11px;border:1px solid var(--bd);background:var(--bg2)">';
   h+='<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:var(--tx)">Sync ClickUp</div><div style="font-size:11px;color:var(--tx2);margin-top:3px">AJW → ClickUp satu arah. ClickUp jadi dashboard dan backup realtime.</div></div><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="sup-soft-chip"><span>Status</span><b>'+(c.enabled?'Aktif':'Nonaktif')+'</b></span><span class="sup-soft-chip"><span>Synced</span><b>'+synced+'</b></span><span class="sup-soft-chip"><span>Queue</span><b>'+q.length+'</b></span><span class="sup-soft-chip"><span>Failed</span><b>'+failed+'</b></span></div></div>';
   h+='<div style="display:grid;grid-template-columns:90px minmax(180px,1fr) minmax(150px,.7fr) repeat(3,minmax(100px,.45fr));gap:8px;margin-top:10px;align-items:end">';
@@ -12731,6 +12824,7 @@ function _exportAllPO(){
 deleteSupplierRecord = function(idx){
   var s = supplierHutang[idx];
   confirmDelete('Hapus nota supplier <b>'+esc((s&&s.namaSupplier)||'ini')+'</b>?<br><small style="color:var(--tx3)">Data tidak dapat dikembalikan.</small>', function(){
+    if(typeof _clickupSupplierArchiveRowTasks==='function') _clickupSupplierArchiveRowTasks(s);
     if(s && s.id) sbDeleteRecord('ajw_supplier', s.id);
     supplierHutang.splice(idx,1);
     saveSupplier();

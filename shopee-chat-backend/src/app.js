@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { Blob } from "node:buffer";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,6 +120,25 @@ async function handleClickupProxy(req, res) {
     const method = String(body.method || "GET").toUpperCase();
     if (!["GET", "POST", "PUT", "DELETE"].includes(method)) {
       return res.status(400).json({ ok: false, error: "Method ClickUp tidak valid" });
+    }
+    const attachment = body.attachment || body.file || body.body?.attachment || body.body?.file;
+    if (attachment && method === "POST" && /\/task\/[^/]+\/attachment(?:\?|$)/.test(path)) {
+      const rawData = String(attachment.dataUrl || attachment.data || "").trim();
+      const match = rawData.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) return res.status(400).json({ ok: false, error: "Format attachment ClickUp tidak valid" });
+      const mimeType = match[1] || "application/octet-stream";
+      const bytes = Buffer.from(match[2], "base64");
+      const form = new FormData();
+      form.append("attachment", new Blob([bytes], { type: mimeType }), String(attachment.filename || "ajw-bukti-transfer.jpg"));
+      const upstream = await fetch(`https://api.clickup.com/api/v2${path}`, {
+        method: "POST",
+        headers: { Authorization: clickupAuthorizationHeader(token) },
+        body: form
+      });
+      const text = await upstream.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      return res.status(upstream.status).json(data);
     }
     const upstream = await fetch(`https://api.clickup.com/api/v2${path}`, {
       method,
