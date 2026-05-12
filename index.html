@@ -12799,6 +12799,29 @@ function _clickupToolsRebuildAll(){
   _clickupToolsRebuild();
   _clickupExpenseRebuild();
 }
+function _clickupToolsRepairCustomFieldValues(){
+  try{
+    var cfg=getCfg()||{};
+    if(!cfg.clickupSupplierEnabled||!cfg.clickupToken) return;
+    if(cfg.clickupSupplierListId&&typeof _clickupSupplierQueueChanged==='function') _clickupSupplierQueueChanged();
+    if((cfg.clickupExpenseListId||((cfg.clickupListMappings||{}).finance_expense||{}).id)&&typeof _clickupExpenseQueueChanged==='function'&&typeof _finExpense!=='undefined') _clickupExpenseQueueChanged();
+    _clickupLog('info','Auto repair ClickUp berjalan','AJW mengisi ulang custom field yang kosong/terhapus di ClickUp dari data website.');
+  }catch(e){
+    try{ _clickupLog('error','Auto repair ClickUp gagal',(e&&e.message)||String(e)); }catch(ex){}
+  }
+}
+function _clickupToolsScheduleRepair(){
+  if(window._clickupToolsRepairTimer) clearInterval(window._clickupToolsRepairTimer);
+  window._clickupToolsRepairTimer=setInterval(function(){
+    _clickupToolsRepairCustomFieldValues();
+  },120000);
+}
+setTimeout(function(){
+  try{
+    _clickupToolsScheduleRepair();
+    _clickupToolsRepairCustomFieldValues();
+  }catch(e){}
+},3500);
 function _renderToolsClickupIntegration(){
   var cfg=getCfg()||{}, logs=_clickupLogLoad(), q=_clickupSupplierQueueLoad(), qe=_clickupExpenseQueueLoad();
   var lists=cfg.clickupDetectedLists||[], fields=cfg.clickupDetectedFields||[], expenseFields=cfg.clickupDetectedExpenseFields||[];
@@ -12814,7 +12837,7 @@ function _renderToolsClickupIntegration(){
   h+='<label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:800;margin-bottom:10px"><input id="CUT-EN" type="checkbox" '+(cfg.clickupSupplierEnabled?'checked':'')+'> Aktifkan realtime AJW → ClickUp</label>';
   h+='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cfg.clickupToken||'')+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cfg.clickupProxyUrl||'/api/clickup/proxy')+'" placeholder="/api/clickup/proxy"></div><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||'')+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||'')+'" placeholder="Tempel URL list Pengeluaran atau ID"></div></div>';
   h+='<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:900;color:var(--tx)">OAuth App</summary><div style="display:grid;gap:9px;margin-top:9px"><div class="g2"><div><label class="lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cfg.clickupClientId||'')+'"></div><div><label class="lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cfg.clickupClientSecret||'')+'"></div></div><div><label class="lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cfg.clickupRedirectUri||location.href.split('#')[0])+'"></div><div><label class="lbl">OAuth Code</label><input id="CUT-CODE" class="fi" placeholder="Tempel code dari URL redirect"></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btnp" onclick="_clickupToolsExchangeCode()">Tukar Code → Token</button></div></div></details>';
-  h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px"><button class="btnp" onclick="_clickupToolsSaveCfg()">Simpan</button><button class="btns" onclick="_clickupToolsTest()">Test Token</button><button class="btns" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupExpenseSyncNow()">Sync Pengeluaran</button><button class="btns" onclick="_clickupToolsRebuildAll()">Rebuild Semua</button></div></div>';
+  h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px"><button class="btnp" onclick="_clickupToolsSaveCfg()">Simpan</button><button class="btns" onclick="_clickupToolsTest()">Test Token</button><button class="btns" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupExpenseSyncNow()">Sync Pengeluaran</button><button class="btns" onclick="_clickupToolsRepairCustomFieldValues()">Repair Custom Field</button><button class="btns" onclick="_clickupToolsRebuildAll()">Rebuild Semua</button></div></div>';
   h+='<div class="card"><div style="font-size:14px;font-weight:900;color:var(--tx);margin-bottom:10px">Workspace, List, dan Field</div>';
   h+='<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cfg.clickupTeamId||'')+'"></div><div><label class="lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cfg.clickupSpaceId||'')+'"></div><div><label class="lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cfg.clickupFolderId||'')+'"></div></div>';
   h+='<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cfg.clickupSupplierStatusOpen||'HUTANG')+'"></div><div><label class="lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cfg.clickupSupplierStatusPartial||'CICIL')+'"></div><div><label class="lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cfg.clickupSupplierStatusPaid||'LUNAS')+'"></div></div>';
