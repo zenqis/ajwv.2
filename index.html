@@ -11840,7 +11840,7 @@ function _clickupSupplierNoteFields(d,n,idx){
     akumulasiTotalNota:'',
     totalBayar:'',
     bayarNota:calc.bayar,
-    detailBayar:calc.bayar,
+    detailBayar:'',
     hutang:calc.sisa,
     sisaNota:calc.sisa,
     sisaHutang:calc.sisa,
@@ -11860,7 +11860,7 @@ function _clickupSupplierNoteFields(d,n,idx){
 function _clickupSupplierNoteMarkdown(d,n,idx){
   var t=_clickupSupplierTotals(d);
   var calc=_clickupSupplierNoteCalc(d,idx);
-  var payLines=['','### History Bayar Terkait','| Tanggal | Keterangan | Detail Bayar | Bukti |','|---|---|---:|---|'];
+  var payLines=['','### History Bayar Terkait','| Tanggal | Keterangan | Bayar Nota | Bukti |','|---|---|---:|---|'];
   if(calc.payments&&calc.payments.length){
     calc.payments.forEach(function(b){
       payLines.push('| '+(b.tgl||'-')+' | '+(b.keterangan||'-')+' | Rp '+fmt(b.jumlah)+' | '+(b.bukti?'Ada bukti':'-')+' |');
@@ -11880,11 +11880,82 @@ function _clickupSupplierNoteMarkdown(d,n,idx){
     '| Kode | '+((n&&n.kode)||'-')+' |',
     '| Keterangan | '+((n&&n.keterangan)||'-')+' |',
     '| Detail Nota | Rp '+fmt(calc.detail)+' |',
-    '| Detail Bayar | Rp '+fmt(calc.bayar)+' |',
+    '| Bayar Nota | Rp '+fmt(calc.bayar)+' |',
     '| Sisa Nota | Rp '+fmt(calc.sisa)+' |',
     '| Status Parent | '+_clickupSupplierStatusName(d)+' |',
     '| ID AJW | '+String(d.id||'')+'-nota-'+idx+' |'
   ].concat(payLines).join('\n');
+}
+function _clickupSupplierPaymentAllocations(d,payIdx){
+  var rows=[], total=0;
+  ((d&&d.nota)||[]).forEach(function(n,idx){
+    var calc=_clickupSupplierNoteCalc(d,idx);
+    (calc.payments||[]).forEach(function(p){
+      if(parseInt(p.idx,10)===parseInt(payIdx,10)){
+        rows.push({idx:idx,tgl:(n&&n.tgl)||'',noDok:(n&&n.noDok)||'',kode:(n&&n.kode)||'',keterangan:(n&&n.keterangan)||'',jumlah:p.jumlah||0});
+        total+=parseFloat(p.jumlah)||0;
+      }
+    });
+  });
+  return {rows:rows,total:total};
+}
+function _clickupSupplierPaymentFields(d,b,idx){
+  var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d), period=_clickupSupplierPeriod(d), alloc=_clickupSupplierPaymentAllocations(d,idx);
+  var map={
+    supplier:d.namaSupplier||'',
+    bulan:period,
+    periode:period,
+    tahun:d.tahun||'',
+    noDok:alloc.rows.map(function(r){return r.noDok;}).filter(Boolean).join(', '),
+    tanggalNota:'',
+    kode:alloc.rows.map(function(r){return r.kode;}).filter(Boolean).join(', '),
+    detailNota:'',
+    totalNota:'',
+    akumulasiTotalNota:'',
+    totalBayar:'',
+    bayarNota:'',
+    detailBayar:parseFloat((b&&b.jumlah)||0)||0,
+    hutang:t.saldo,
+    sisaNota:'',
+    sisaHutang:t.saldo,
+    status:_clickupSupplierStatusName(d),
+    tanggalBayar:(b&&b.tgl)||'',
+    jumlahBayar:parseFloat((b&&b.jumlah)||0)||0,
+    keterangan:(b&&b.keterangan)||'',
+    ajwId:String(d.id||'')+'-bayar-'+idx
+  };
+  var out=[];
+  Object.keys(map).forEach(function(k){
+    if(fields[k]&&String(fields[k].type).toLowerCase()!=='tasks'){
+      var val=_clickupSupplierFieldValue(fields[k],map[k]);
+      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val,key:k});
+    }
+  });
+  return out;
+}
+function _clickupSupplierPaymentMarkdown(d,b,idx){
+  var alloc=_clickupSupplierPaymentAllocations(d,idx);
+  var rows=alloc.rows.length?alloc.rows.map(function(r){
+    return '| '+(r.tgl||'-')+' | '+(r.noDok||'-')+' | '+(r.kode||'-')+' | '+(r.keterangan||'-')+' | Rp '+fmt(r.jumlah)+' |';
+  }).join('\n'):'| - | - | - | - | Rp 0 |';
+  return [
+    '## History Bayar Supplier AJW',
+    '',
+    '| Field | Data |',
+    '|---|---|',
+    '| Supplier | '+(d.namaSupplier||'-')+' |',
+    '| Bulan | '+(d.bulan||'-')+' '+(d.tahun||'')+' |',
+    '| Tanggal Bayar | '+((b&&b.tgl)||'-')+' |',
+    '| Keterangan | '+((b&&b.keterangan)||'-')+' |',
+    '| Detail Bayar | Rp '+fmt(parseFloat((b&&b.jumlah)||0)||0)+' |',
+    '| Bukti Transfer | '+((b&&b.bukti)?'Ada bukti':'-')+' |',
+    '| ID AJW | '+String(d.id||'')+'-bayar-'+idx+' |',
+    '',
+    '### Nota Terkait',
+    '| Tanggal Nota | No Dokumen | Kode | Keterangan | Alokasi Bayar |',
+    '|---|---|---|---|---:|',
+    rows
+  ].join('\n');
 }
 function _clickupSupplierStatus(d){
   return _clickupSupplierTaskStatusName(_clickupSupplierStatusName(d));
@@ -11969,6 +12040,22 @@ function _clickupSupplierUploadNoteAttachments(d, idx, taskId){
   });
   return chain;
 }
+function _clickupSupplierUploadPaymentAttachments(d, idx, taskId){
+  if(!d||!taskId) return Promise.resolve();
+  var b=((d&&d.bayar)||[])[idx]||{};
+  if(!b.bukti) return Promise.resolve();
+  var root=d.clickupPaymentAttachmentKeys||{};
+  var uploaded=root[String(idx)]||{};
+  var key='payment-'+idx+'-'+_clickupHashText(String(b.bukti).slice(0,160));
+  if(uploaded[key]) return Promise.resolve();
+  var img={key:key,dataUrl:b.bukti,filename:'bukti-bayar-history-'+(d.id||'nota')+'-'+(idx+1)+'.jpg'};
+  return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/attachment','POST',{attachment:img}).then(function(){
+    uploaded[key]=isoNow();
+    root[String(idx)]=uploaded;
+    d.clickupPaymentAttachmentKeys=root;
+    _clickupSupplierPatchLocalRow(d);
+  });
+}
 function _clickupSupplierPayload(d, includeCustom){
   var t=_clickupSupplierTotals(d);
   var period=(d.tahun&&d.bulanNum)?(String(d.tahun)+'-'+String(d.bulanNum).padStart(2,'0')):((d.bulan||'-')+' '+(d.tahun||''));
@@ -11996,6 +12083,21 @@ function _clickupSupplierNotePayload(d,n,idx,includeCustom,parentId){
   var st=_clickupSupplierTaskStatusName(_clickupSupplierParentStatusFromNoteCalc(d,_clickupSupplierNoteCalc(d,idx)));
   if(st) payload.status=st;
   var cf=includeCustom?_clickupSupplierNoteFields(d,n,idx):[];
+  if(cf.length) payload.custom_fields=cf;
+  return payload;
+}
+function _clickupSupplierPaymentPayload(d,b,idx,includeCustom,parentId){
+  var amount=parseFloat((b&&b.jumlah)||0)||0;
+  var payload={
+    name:(d.namaSupplier||'Supplier')+' - History Bayar '+((b&&b.tgl)||((d&&d.tahun)||''))+' #'+(idx+1)+' - Rp '+fmt(amount),
+    markdown_content:_clickupSupplierPaymentMarkdown(d,b,idx),
+    tags:['ajw','history-bayar'],
+    notify_all:false
+  };
+  if(parentId) payload.parent=parentId;
+  var st=_clickupSupplierTaskStatusName(_clickupSupplierStatusName(d));
+  if(st) payload.status=st;
+  var cf=includeCustom?_clickupSupplierPaymentFields(d,b,idx):[];
   if(cf.length) payload.custom_fields=cf;
   return payload;
 }
@@ -12041,7 +12143,9 @@ function _clickupSupplierSyncSubtasks(d,parentId){
   if(!parentId) return Promise.resolve([]);
   var known=d.clickupSubtaskIds||{};
   var noteKnown=known.nota||{};
+  var payKnown=known.bayar||{};
   var notes=d.nota||[];
+  var pays=d.bayar||[];
   var ids=[];
   var chain=Promise.resolve();
   notes.forEach(function(n,idx){
@@ -12052,7 +12156,7 @@ function _clickupSupplierSyncSubtasks(d,parentId){
           var cf=_clickupSupplierNoteFields(d,n,idx);
           return _clickupSetCustomFields(tid,cf,'hutang nota').then(function(){
             ids.push(tid);
-            return _clickupSupplierClearCustomFields(tid,['totalNota','akumulasiTotalNota','totalBayar','sisaHutang']).then(function(){
+            return _clickupSupplierClearCustomFields(tid,['totalNota','akumulasiTotalNota','totalBayar','detailBayar','sisaHutang']).then(function(){
               return _clickupSupplierUploadNoteAttachments(d,idx,tid).then(function(){ return res; });
             });
           });
@@ -12060,15 +12164,15 @@ function _clickupSupplierSyncSubtasks(d,parentId){
           if(!_clickupIsMissingTaskError(err)) throw err;
           _clickupLog('warn','Subtask ClickUp hilang, dibuat ulang',((n&&n.noDok)||('nota '+(idx+1))));
           delete noteKnown[String(idx)];
-          d.clickupSubtaskIds={nota:noteKnown};
+          d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
           _clickupSupplierPatchLocalRow(d);
           return _clickupSupplierCreateTaskInList(_clickupSupplierNotePayload(d,n,idx,true,parentId)).then(function(res){
             if(res&&res.id){
               noteKnown[String(idx)]=res.id;
               ids.push(res.id);
-              d.clickupSubtaskIds={nota:noteKnown};
+              d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
               _clickupSupplierPatchLocalRow(d);
-              return _clickupSupplierClearCustomFields(res.id,['totalNota','akumulasiTotalNota','totalBayar','sisaHutang']).then(function(){
+              return _clickupSupplierClearCustomFields(res.id,['totalNota','akumulasiTotalNota','totalBayar','detailBayar','sisaHutang']).then(function(){
                 return _clickupSupplierUploadNoteAttachments(d,idx,res.id).then(function(){ return res; });
               });
             }
@@ -12080,9 +12184,9 @@ function _clickupSupplierSyncSubtasks(d,parentId){
         if(res&&res.id){
           noteKnown[String(idx)]=res.id;
           ids.push(res.id);
-          d.clickupSubtaskIds={nota:noteKnown};
+          d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
           _clickupSupplierPatchLocalRow(d);
-          return _clickupSupplierClearCustomFields(res.id,['totalNota','akumulasiTotalNota','totalBayar','sisaHutang']).then(function(){
+          return _clickupSupplierClearCustomFields(res.id,['totalNota','akumulasiTotalNota','totalBayar','detailBayar','sisaHutang']).then(function(){
             return _clickupSupplierUploadNoteAttachments(d,idx,res.id).then(function(){ return res; });
           });
         }
@@ -12097,9 +12201,64 @@ function _clickupSupplierSyncSubtasks(d,parentId){
         delete noteKnown[k];
       }
     });
-    d.clickupSubtaskIds={nota:noteKnown};
-    _clickupSupplierPatchLocalRow(d);
-    return ids;
+    return Promise.resolve();
+  }).then(function(){
+    pays.forEach(function(b,idx){
+      chain=chain.then(function(){
+        var tid=payKnown[String(idx)]||'';
+        if(tid){
+          return _clickupSupplierRequest('/task/'+encodeURIComponent(tid),'PUT',_clickupSupplierPaymentPayload(d,b,idx,false,parentId)).then(function(res){
+            return _clickupSetCustomFields(tid,_clickupSupplierPaymentFields(d,b,idx),'history bayar').then(function(){
+              ids.push(tid);
+              return _clickupSupplierClearCustomFields(tid,['detailNota','bayarNota','totalNota','akumulasiTotalNota','totalBayar','sisaNota']).then(function(){
+                return _clickupSupplierUploadPaymentAttachments(d,idx,tid).then(function(){ return res; });
+              });
+            });
+          }).catch(function(err){
+            if(!_clickupIsMissingTaskError(err)) throw err;
+            _clickupLog('warn','Subtask history bayar hilang, dibuat ulang',((b&&b.tgl)||'bayar')+' Rp '+fmt(parseFloat((b&&b.jumlah)||0)||0));
+            delete payKnown[String(idx)];
+            d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
+            _clickupSupplierPatchLocalRow(d);
+            return _clickupSupplierCreateTaskInList(_clickupSupplierPaymentPayload(d,b,idx,true,parentId)).then(function(res){
+              if(res&&res.id){
+                payKnown[String(idx)]=res.id;
+                ids.push(res.id);
+                d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
+                _clickupSupplierPatchLocalRow(d);
+                return _clickupSupplierClearCustomFields(res.id,['detailNota','bayarNota','totalNota','akumulasiTotalNota','totalBayar','sisaNota']).then(function(){
+                  return _clickupSupplierUploadPaymentAttachments(d,idx,res.id).then(function(){ return res; });
+                });
+              }
+              return res;
+            });
+          });
+        }
+        return _clickupSupplierCreateTaskInList(_clickupSupplierPaymentPayload(d,b,idx,true,parentId)).then(function(res){
+          if(res&&res.id){
+            payKnown[String(idx)]=res.id;
+            ids.push(res.id);
+            d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
+            _clickupSupplierPatchLocalRow(d);
+            return _clickupSupplierClearCustomFields(res.id,['detailNota','bayarNota','totalNota','akumulasiTotalNota','totalBayar','sisaNota']).then(function(){
+              return _clickupSupplierUploadPaymentAttachments(d,idx,res.id).then(function(){ return res; });
+            });
+          }
+          return res;
+        });
+      });
+    });
+    return chain.then(function(){
+      Object.keys(payKnown).forEach(function(k){
+        if(parseInt(k,10)>=pays.length && payKnown[k]){
+          _clickupSupplierRequest('/task/'+encodeURIComponent(payKnown[k]),'PUT',{archived:true}).catch(function(){});
+          delete payKnown[k];
+        }
+      });
+      d.clickupSubtaskIds={nota:noteKnown,bayar:payKnown};
+      _clickupSupplierPatchLocalRow(d);
+      return ids;
+    });
   });
 }
 function _clickupSupplierUpdateRelation(parentId, ids){
@@ -12125,7 +12284,9 @@ function _clickupSupplierArchiveRowTasks(row){
   var ids=[];
   if(row.clickupTaskId) ids.push(row.clickupTaskId);
   var noteMap=(row.clickupSubtaskIds&&row.clickupSubtaskIds.nota)||{};
+  var payMap=(row.clickupSubtaskIds&&row.clickupSubtaskIds.bayar)||{};
   Object.keys(noteMap).forEach(function(k){ if(noteMap[k]) ids.push(noteMap[k]); });
+  Object.keys(payMap).forEach(function(k){ if(payMap[k]) ids.push(payMap[k]); });
   ids.forEach(function(id){
     _clickupSupplierRequest('/task/'+encodeURIComponent(id),'PUT',{archived:true}).catch(function(){});
   });
@@ -12152,9 +12313,10 @@ function _clickupSupplierUpsert(d, taskId){
         delete known[String(d.id)];
         _clickupSupplierKnownSave(known);
         d.clickupTaskId='';
-        d.clickupSubtaskIds={nota:{}};
+        d.clickupSubtaskIds={nota:{},bayar:{}};
         d.clickupAttachmentKeys={};
         d.clickupNoteAttachmentKeys={};
+        d.clickupPaymentAttachmentKeys={};
         _clickupSupplierPatchLocalRow(d);
         return _clickupSupplierUpsert(d,'');
       });
