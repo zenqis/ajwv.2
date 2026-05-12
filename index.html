@@ -11416,6 +11416,76 @@ function _clickupListIdFallback(v){
   var m=s.match(/^\d+-(\d+)-\d+$/);
   return m?m[1]:'';
 }
+function _clickupNormName(v){
+  return String(v||'').toLowerCase().replace(/\([^)]*\)/g,' ').replace(/[^a-z0-9]+/g,' ').trim();
+}
+function _clickupSupplierFieldAliases(){
+  return {
+    supplier:['supplier','nama supplier'],
+    bulan:['bulan nota','bulan','periode nota'],
+    tanggalNota:['tanggal nota','tgl nota','tanggal'],
+    noDok:['no dokumen','nomor dokumen','no document','dokumen'],
+    kode:['kode','kode nota'],
+    totalNota:['total nota','nilai nota','nominal nota'],
+    akumulasiTotalNota:['akumulasi total nota','total hutang','akumulasi nota'],
+    totalBayar:['history total bayar','total bayar','rekap bayar','terbayar'],
+    hutang:['wref','hutang','saldo hutang','sisa hutang'],
+    relHutangNota:['rel hutang nota','relasi hutang nota','hutang nota'],
+    status:['status hutang','status'],
+    tanggalBayar:['tanggal bayar','tgl bayar'],
+    jumlahBayar:['jumlah bayar','nominal bayar'],
+    keterangan:['keterangan','catatan'],
+    ajwId:['ajw id','id ajw']
+  };
+}
+function _clickupSupplierFieldMetaLoad(){
+  try{return JSON.parse(localStorage.getItem('ajw_clickup_supplier_field_meta')||'{}')||{};}catch(e){return {};}
+}
+function _clickupSupplierFieldMetaSave(meta){
+  try{localStorage.setItem('ajw_clickup_supplier_field_meta',JSON.stringify(meta||{}));}catch(e){}
+}
+function _clickupSupplierFieldsByKey(){
+  var cfg=_clickupSupplierCfg(), manual=cfg.fields||{}, meta=_clickupSupplierFieldMetaLoad(), out={};
+  Object.keys(manual).forEach(function(k){
+    if(manual[k]) out[k]=meta[manual[k]]||{id:manual[k],name:k,type:'text',type_config:{}};
+  });
+  return out;
+}
+function _clickupSupplierAutoMapFields(fields){
+  var aliases=_clickupSupplierFieldAliases(), mapped={}, meta={};
+  (fields||[]).forEach(function(f){
+    if(!f||!f.id) return;
+    meta[f.id]={id:f.id,name:f.name||'',type:f.type||'',type_config:f.type_config||{}};
+  });
+  Object.keys(aliases).forEach(function(key){
+    var hit=null;
+    aliases[key].some(function(alias){
+      var want=_clickupNormName(alias);
+      hit=(fields||[]).filter(function(f){ return _clickupNormName(f&&f.name)===want; })[0]||
+          (fields||[]).filter(function(f){ return _clickupNormName(f&&f.name).indexOf(want)>=0; })[0];
+      return !!hit;
+    });
+    if(hit) mapped[key]=hit.id;
+  });
+  _clickupSupplierFieldMetaSave(meta);
+  return mapped;
+}
+function _clickupSupplierLoadFieldMap(){
+  var c=_clickupSupplierCfg();
+  if(!c.token||!c.listId) return Promise.resolve({});
+  return _clickupSupplierRequest('/list/'+encodeURIComponent(c.listId)+'/field','GET').catch(function(err){
+    var fb=_clickupListIdFallback(c.listId);
+    if(!fb||fb===c.listId) throw err;
+    return _clickupSupplierRequest('/list/'+encodeURIComponent(fb)+'/field','GET');
+  }).then(function(data){
+    var fields=data.fields||[];
+    var mapped=_clickupSupplierAutoMapFields(fields);
+    var cfg=getCfg()||{};
+    cfg.clickupSupplierFields=Object.assign({}, cfg.clickupSupplierFields||{}, mapped);
+    saveCfg(cfg);
+    return mapped;
+  });
+}
 function _clickupSupplierReady(){
   var c=_clickupSupplierCfg();
   return !!(c.enabled && c.token && c.listId);
@@ -11519,7 +11589,7 @@ function _clickupSupplierMarkdown(d){
   return lines.join('\n');
 }
 function _clickupSupplierCustomFields(d){
-  var cfg=_clickupSupplierCfg(), f=cfg.fields||{}, t=_clickupSupplierTotals(d);
+  var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d);
   var first=(d.nota&&d.nota[0])||{}, latestPay=(d.bayar&&d.bayar[d.bayar.length-1])||{};
   var map={
     supplier:d.namaSupplier||'',
@@ -11528,6 +11598,7 @@ function _clickupSupplierCustomFields(d){
     noDok:first.noDok||'',
     tanggalNota:first.tgl||'',
     totalNota:t.nota,
+    akumulasiTotalNota:t.nota,
     totalBayar:t.bayar,
     hutang:t.saldo,
     status:t.status,
@@ -11538,9 +11609,84 @@ function _clickupSupplierCustomFields(d){
   };
   var out=[];
   Object.keys(map).forEach(function(k){
-    if(f[k]) out.push({id:f[k],value:map[k]});
+    if(fields[k]){
+      var val=_clickupSupplierFieldValue(fields[k],map[k]);
+      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val});
+    }
   });
   return out;
+}
+function _clickupSupplierFieldValue(field, value){
+  var type=String((field&&field.type)||'').toLowerCase();
+  var cfg=(field&&field.type_config)||{};
+  if(type==='date'){
+    var d=String(value||'').trim();
+    var ts=d?Date.parse(d):NaN;
+    return isNaN(ts)?null:ts;
+  }
+  if(type==='currency'||type==='number'||type==='automatic_progress'){
+    return parseFloat(value)||0;
+  }
+  if(type==='checkbox'){
+    return !!value;
+  }
+  if(type==='drop_down'||type==='labels'){
+    var label=String(value||'').trim();
+    var opts=(cfg.options||[]);
+    var hit=opts.filter(function(o){return _clickupNormName(o.name)===_clickupNormName(label);})[0]||
+            opts.filter(function(o){return _clickupNormName(o.name).indexOf(_clickupNormName(label))>=0;})[0];
+    if(type==='labels') return hit?[hit.id]:[];
+    return hit?hit.id:undefined;
+  }
+  if(type==='tasks'){
+    var ids=Array.isArray(value)?value.filter(Boolean):[];
+    return {add:ids,rem:[]};
+  }
+  return String(value==null?'':value);
+}
+function _clickupSupplierNoteFields(d,n,idx){
+  var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d);
+  var map={
+    supplier:d.namaSupplier||'',
+    bulan:(d.tahun&&d.bulanNum)?(String(d.tahun)+'-'+String(d.bulanNum).padStart(2,'0')):(d.bulan||''),
+    tanggalNota:(n&&n.tgl)||'',
+    noDok:(n&&n.noDok)||'',
+    kode:(n&&n.kode)||'',
+    totalNota:parseFloat((n&&n.nilaiNetto)||0)||0,
+    akumulasiTotalNota:t.nota,
+    totalBayar:t.bayar,
+    hutang:t.saldo,
+    keterangan:(n&&n.keterangan)||'',
+    ajwId:String(d.id||'')+'-nota-'+idx
+  };
+  var out=[];
+  Object.keys(map).forEach(function(k){
+    if(fields[k]&&String(fields[k].type).toLowerCase()!=='tasks'){
+      var val=_clickupSupplierFieldValue(fields[k],map[k]);
+      if(val!==undefined && val!==null) out.push({id:fields[k].id,value:val});
+    }
+  });
+  return out;
+}
+function _clickupSupplierNoteMarkdown(d,n,idx){
+  var t=_clickupSupplierTotals(d);
+  return [
+    '## Nota Supplier AJW',
+    '',
+    '| Field | Data |',
+    '|---|---|',
+    '| Supplier | '+(d.namaSupplier||'-')+' |',
+    '| Bulan | '+(d.bulan||'-')+' '+(d.tahun||'')+' |',
+    '| Tanggal Nota | '+((n&&n.tgl)||'-')+' |',
+    '| No Dokumen | '+((n&&n.noDok)||'-')+' |',
+    '| Kode | '+((n&&n.kode)||'-')+' |',
+    '| Keterangan | '+((n&&n.keterangan)||'-')+' |',
+    '| Total Nota | Rp '+fmt(parseFloat((n&&n.nilaiNetto)||0)||0)+' |',
+    '| Akumulasi Total Nota | Rp '+fmt(t.nota)+' |',
+    '| History Total Bayar | Rp '+fmt(t.bayar)+' |',
+    '| Hutang | Rp '+fmt(t.saldo)+' |',
+    '| ID AJW | '+String(d.id||'')+'-nota-'+idx+' |'
+  ].join('\n');
 }
 function _clickupSupplierStatus(d){
   var c=_clickupSupplierCfg(), s=_clickupSupplierTotals(d).status;
@@ -11565,8 +11711,10 @@ function _clickupSupplierRequest(path, method, body){
   });
 }
 function _clickupSupplierPayload(d, includeCustom){
+  var t=_clickupSupplierTotals(d);
+  var period=(d.tahun&&d.bulanNum)?(String(d.tahun)+'-'+String(d.bulanNum).padStart(2,'0')):((d.bulan||'-')+' '+(d.tahun||''));
   var payload={
-    name:_clickupSupplierTaskName(d),
+    name:(d.namaSupplier||'Supplier')+' - Hutang '+period+' (Rekap)',
     markdown_content:_clickupSupplierMarkdown(d),
     tags:['ajw','hutang-supplier'],
     notify_all:false
@@ -11577,6 +11725,27 @@ function _clickupSupplierPayload(d, includeCustom){
   if(cf.length) payload.custom_fields=cf;
   return payload;
 }
+function _clickupSupplierNotePayload(d,n,idx,includeCustom,parentId){
+  var doc=(n&&n.noDok)?(' - '+n.noDok):'';
+  var payload={
+    name:(d.namaSupplier||'Supplier')+' - '+(d.bulan||'-')+' '+(d.tahun||'')+doc,
+    markdown_content:_clickupSupplierNoteMarkdown(d,n,idx),
+    tags:['ajw','hutang-nota'],
+    notify_all:false
+  };
+  if(parentId) payload.parent=parentId;
+  var cf=includeCustom?_clickupSupplierNoteFields(d,n,idx):[];
+  if(cf.length) payload.custom_fields=cf;
+  return payload;
+}
+function _clickupSupplierCreateTaskInList(payload){
+  var c=_clickupSupplierCfg();
+  return _clickupSupplierRequest('/list/'+encodeURIComponent(c.listId)+'/task','POST',payload).catch(function(err){
+    var fb=_clickupListIdFallback(c.listId);
+    if(!fb || fb===c.listId) throw err;
+    return _clickupSupplierRequest('/list/'+encodeURIComponent(fb)+'/task','POST',payload);
+  });
+}
 function _clickupSupplierApplyLocal(id, patch){
   var key=String(id);
   (supplierHutang||[]).forEach(function(d){
@@ -11586,20 +11755,77 @@ function _clickupSupplierApplyLocal(id, patch){
   });
   try{ localStorage.setItem('ajw_supplier',JSON.stringify(supplierHutang)); }catch(e){}
 }
+function _clickupSupplierPatchLocalRow(d){
+  if(d&&d.id) _clickupSupplierApplyLocal(d.id,d);
+}
+function _clickupSupplierSyncSubtasks(d,parentId){
+  if(!parentId) return Promise.resolve([]);
+  var known=d.clickupSubtaskIds||{};
+  var noteKnown=known.nota||{};
+  var notes=d.nota||[];
+  var ids=[];
+  var chain=Promise.resolve();
+  notes.forEach(function(n,idx){
+    chain=chain.then(function(){
+      var tid=noteKnown[String(idx)]||'';
+      if(tid){
+        return _clickupSupplierRequest('/task/'+encodeURIComponent(tid),'PUT',_clickupSupplierNotePayload(d,n,idx,false,parentId)).then(function(res){
+          var cf=_clickupSupplierNoteFields(d,n,idx);
+          return Promise.all(cf.map(function(field){
+            return _clickupSupplierRequest('/task/'+encodeURIComponent(tid)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
+          })).then(function(){ ids.push(tid); return res; });
+        });
+      }
+      return _clickupSupplierCreateTaskInList(_clickupSupplierNotePayload(d,n,idx,true,parentId)).then(function(res){
+        if(res&&res.id){
+          noteKnown[String(idx)]=res.id;
+          ids.push(res.id);
+          d.clickupSubtaskIds={nota:noteKnown};
+          _clickupSupplierPatchLocalRow(d);
+        }
+        return res;
+      });
+    });
+  });
+  return chain.then(function(){
+    Object.keys(noteKnown).forEach(function(k){
+      if(parseInt(k,10)>=notes.length && noteKnown[k]){
+        _clickupSupplierRequest('/task/'+encodeURIComponent(noteKnown[k]),'PUT',{archived:true}).catch(function(){});
+        delete noteKnown[k];
+      }
+    });
+    d.clickupSubtaskIds={nota:noteKnown};
+    _clickupSupplierPatchLocalRow(d);
+    return ids;
+  });
+}
+function _clickupSupplierUpdateRelation(parentId, ids){
+  var fields=_clickupSupplierFieldsByKey(), rel=fields.relHutangNota;
+  if(!parentId||!rel||String(rel.type).toLowerCase()!=='tasks'||!ids||!ids.length) return Promise.resolve();
+  return _clickupSupplierRequest('/task/'+encodeURIComponent(parentId)+'/field/'+encodeURIComponent(rel.id),'POST',{value:_clickupSupplierFieldValue(rel,ids)}).catch(function(){});
+}
 function _clickupSupplierUpsert(d, taskId){
   var c=_clickupSupplierCfg();
-  if(taskId){
-    return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupSupplierPayload(d,false)).then(function(res){
-      var cf=_clickupSupplierCustomFields(d);
-      return Promise.all(cf.map(function(field){
-        return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
-      })).then(function(){ return res; });
+  return _clickupSupplierLoadFieldMap().catch(function(){}).then(function(){
+    if(taskId){
+      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupSupplierPayload(d,false)).then(function(res){
+        var cf=_clickupSupplierCustomFields(d);
+        return Promise.all(cf.map(function(field){
+          return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
+        })).then(function(){
+          return _clickupSupplierSyncSubtasks(d,taskId).then(function(ids){
+            return _clickupSupplierUpdateRelation(taskId,ids).then(function(){ return res; });
+          });
+        });
+      });
+    }
+    return _clickupSupplierCreateTaskInList(_clickupSupplierPayload(d,true)).then(function(res){
+      var tid=res&&res.id;
+      if(!tid) return res;
+      return _clickupSupplierSyncSubtasks(d,tid).then(function(ids){
+        return _clickupSupplierUpdateRelation(tid,ids).then(function(){ return res; });
+      });
     });
-  }
-  return _clickupSupplierRequest('/list/'+encodeURIComponent(c.listId)+'/task','POST',_clickupSupplierPayload(d,true)).catch(function(err){
-    var fb=_clickupListIdFallback(c.listId);
-    if(!fb || fb===c.listId) throw err;
-    return _clickupSupplierRequest('/list/'+encodeURIComponent(fb)+'/task','POST',_clickupSupplierPayload(d,true));
   });
 }
 function _clickupSupplierProcess(){
@@ -11690,7 +11916,7 @@ function _clickupSupplierStatusHtml(){
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:8px">';
   fieldKeys.forEach(function(k){ h+='<div><label class="lbl">'+k+'</label><input id="CU-F-'+k+'" class="fi" value="'+escAttr(f[k]||'')+'" placeholder="field id"></div>'; });
   h+='</div></details>';
-  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btnp" onclick="_clickupSupplierSaveCfg()" style="padding:7px 12px">Simpan Config</button><button class="btns" onclick="_clickupSupplierSyncNow()" style="padding:7px 12px">Sync Sekarang</button><button class="btns" onclick="localStorage.removeItem(\'ajw_clickup_supplier_queue\');renderSupplier()" style="padding:7px 12px">Bersihkan Queue</button></div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btnp" onclick="_clickupSupplierSaveCfg()" style="padding:7px 12px">Simpan Config</button><button class="btns" onclick="_clickupAdminMapFields()" style="padding:7px 12px">Auto Mapping Field</button><button class="btns" onclick="_clickupSupplierSyncNow()" style="padding:7px 12px">Sync Sekarang</button><button class="btns" onclick="localStorage.removeItem(\'ajw_clickup_supplier_queue\');renderSupplier()" style="padding:7px 12px">Bersihkan Queue</button></div>';
   if(failed){
     var err=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='failed'&&d.clickupSyncError;})[0];
     if(err) h+='<div style="margin-top:8px;font-size:11px;color:#B91C1C;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:8px">Error terakhir: '+esc(err.clickupSyncError)+'</div>';
@@ -11715,6 +11941,16 @@ function _clickupAdminSaveCfg(){
   cfg.clickupSupplierStatusPaid=val('CU-ST-PAID');
   saveCfg(cfg);
   toast('Config ClickUp disimpan','success');
+}
+function _clickupAdminMapFields(){
+  _clickupAdminSaveCfg();
+  _clickupSupplierLoadFieldMap().then(function(mapped){
+    var keys=Object.keys(mapped||{});
+    toast(keys.length?'Custom field cocok: '+keys.join(', '):'Custom field belum cocok. Pastikan nama field sama dengan template AJW.','success',7000);
+    try{ if(typeof renderAdmin==='function') renderAdmin(); }catch(e){}
+  }).catch(function(e){
+    toast('Auto mapping gagal: '+e.message,'error',6500);
+  });
 }
 function _clickupAdminAuthUrl(){
   _clickupAdminSaveCfg();
@@ -13949,7 +14185,7 @@ renderAdmin = function(){
     h += '<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Team / Workspace ID</label><input id="CU-TEAM" class="fi" value="'+esc(cfg.clickupTeamId||'')+'" placeholder="opsional untuk load space"></div><div><label class="lbl">Space ID</label><input id="CU-SPACE" class="fi" value="'+esc(cfg.clickupSpaceId||'')+'" placeholder="opsional untuk load list"></div><div><label class="lbl">Folder ID</label><input id="CU-FOLDER" class="fi" value="'+esc(cfg.clickupFolderId||'')+'" placeholder="opsional untuk load list"></div></div>';
     h += '<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Status Belum</label><input id="CU-ST-OPEN" class="fi" value="'+esc(cfg.clickupSupplierStatusOpen||'')+'" placeholder="opsional"></div><div><label class="lbl">Status Sebagian</label><input id="CU-ST-PART" class="fi" value="'+esc(cfg.clickupSupplierStatusPartial||'')+'" placeholder="opsional"></div><div><label class="lbl">Status Lunas</label><input id="CU-ST-PAID" class="fi" value="'+esc(cfg.clickupSupplierStatusPaid||'')+'" placeholder="opsional"></div></div>';
     h += '<textarea id="CU-INFO" class="fi" rows="4" readonly style="margin-bottom:9px;font-size:11px" placeholder="Hasil test / workspace / list ClickUp akan tampil di sini."></textarea>';
-    h += '<div style="display:flex;gap:7px;flex-wrap:wrap"><button onclick="_clickupAdminSaveCfg()" style="background:var(--navy);color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Simpan ClickUp</button><button onclick="_clickupAdminAuthUrl()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Buka Authorize</button><button onclick="_clickupAdminExchangeCode()" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Tukar Code → Token</button><button onclick="_clickupAdminTest()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Test Token</button><button onclick="_clickupAdminLoadSpaces()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Load Spaces</button><button onclick="_clickupAdminLoadLists()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Load Lists</button><button onclick="_clickupAdminSyncSupplierNow()" style="background:#7C2D12;color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Sync Hutang Supplier</button></div></div>';
+    h += '<div style="display:flex;gap:7px;flex-wrap:wrap"><button onclick="_clickupAdminSaveCfg()" style="background:var(--navy);color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Simpan ClickUp</button><button onclick="_clickupAdminAuthUrl()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Buka Authorize</button><button onclick="_clickupAdminExchangeCode()" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Tukar Code → Token</button><button onclick="_clickupAdminTest()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Test Token</button><button onclick="_clickupAdminLoadSpaces()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Load Spaces</button><button onclick="_clickupAdminLoadLists()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Load Lists</button><button onclick="_clickupAdminMapFields()" style="background:var(--bg3);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Auto Mapping Field</button><button onclick="_clickupAdminSyncSupplierNow()" style="background:#7C2D12;color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-weight:700;font-family:Arial;font-size:12px">Sync Hutang Supplier</button></div></div>';
     h += '<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">AI Core / OpenClaw / Codex Bridge</div>';
     h += '<div style="background:#EFF6FF;border-radius:6px;padding:9px;margin-bottom:9px;font-size:11px;line-height:1.7">Satu konfigurasi bridge di sini akan dipakai bersama oleh <b>AI &gt; Agent AI</b>, <b>AI &gt; Automation</b>, dan task otomasi agent lintas AJW.</div>';
     h += '<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Provider</label><select id="AI-BRIDGE-PROVIDER" class="fi"><option value="openclaw"'+((cfg.aiCoreProvider||'openclaw')==='openclaw'?' selected':'')+'>OpenClaw</option><option value="openai"'+((cfg.aiCoreProvider||'openclaw')==='openai'?' selected':'')+'>OpenAI Direct</option><option value="custom"'+((cfg.aiCoreProvider||'openclaw')==='custom'?' selected':'')+'>Custom Agent</option></select></div><div><label class="lbl">Runtime</label><select id="AI-BRIDGE-RUNTIME" class="fi"><option value="bridge"'+((cfg.aiCoreRuntime||'bridge')==='bridge'?' selected':'')+'>Bridge</option><option value="openai-direct"'+((cfg.aiCoreRuntime||'bridge')==='openai-direct'?' selected':'')+'>OpenAI Direct</option></select></div><div><label class="lbl">Nama Agent</label><input id="AI-BRIDGE-NAME" class="fi" value="'+esc(cfg.aiBridgeAgentName||'AJW Brain')+'" placeholder="AJW Brain"></div></div>';
