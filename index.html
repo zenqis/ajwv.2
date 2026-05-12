@@ -11433,6 +11433,7 @@ function _clickupSupplierFieldAliases(){
     akumulasiTotalNota:['akumulasi total nota','total hutang','akumulasi nota'],
     totalBayar:['history total bayar','total bayar','rekap bayar','terbayar'],
     bayarNota:['bayar nota','pembayaran nota','bayar'],
+    detailBayar:['detail bayar','rincian bayar','history bayar','bayar nota'],
     hutang:['wref','hutang','saldo hutang','sisa hutang'],
     sisaNota:['sisa nota','saldo nota','selisih nota'],
     sisaHutang:['sisa hutang','saldo hutang','hutang tersisa'],
@@ -11567,13 +11568,23 @@ function _clickupSupplierPeriod(d){
 }
 function _clickupSupplierNoteCalc(d, idx){
   var notes=(d&&d.nota)||[], pays=(d&&d.bayar)||[];
-  var paid=pays.reduce(function(s,b){return s+(parseFloat(b.jumlah)||0);},0);
   var n=notes[idx]||{};
   var val=parseFloat(n.nilaiNetto)||0;
-  for(var i=0;i<idx;i++) paid-=parseFloat((notes[i]&&notes[i].nilaiNetto)||0)||0;
-  var bayar=Math.max(0,Math.min(val,paid));
+  var start=0;
+  for(var i=0;i<idx;i++) start+=parseFloat((notes[i]&&notes[i].nilaiNetto)||0)||0;
+  var end=start+val, payStart=0, rows=[], bayar=0;
+  pays.forEach(function(b,bi){
+    var amount=parseFloat(b&&b.jumlah)||0;
+    var payEnd=payStart+amount;
+    var overlap=Math.max(0,Math.min(end,payEnd)-Math.max(start,payStart));
+    if(overlap>0){
+      rows.push({idx:bi,tgl:(b&&b.tgl)||'',keterangan:(b&&b.keterangan)||'',jumlah:overlap,bukti:(b&&b.bukti)||''});
+      bayar+=overlap;
+    }
+    payStart=payEnd;
+  });
   var sisa=Math.max(0,val-bayar);
-  return {detail:val,bayar:bayar,sisa:sisa,status:_clickupSupplierStatusName(d)};
+  return {detail:val,bayar:bayar,sisa:sisa,payments:rows,status:_clickupSupplierStatusName(d)};
 }
 function _clickupSupplierParentStatusFromNoteCalc(d, calc){
   var parent=_clickupSupplierStatusName(d);
@@ -11640,7 +11651,8 @@ function _clickupSupplierCustomFields(d){
     totalNota:t.nota,
     akumulasiTotalNota:t.nota,
     totalBayar:t.bayar,
-    bayarNota:t.bayar,
+    bayarNota:'',
+    detailBayar:'',
     hutang:t.saldo,
     sisaNota:t.saldo,
     sisaHutang:t.saldo,
@@ -11701,9 +11713,10 @@ function _clickupSupplierNoteFields(d,n,idx){
     kode:(n&&n.kode)||'',
     detailNota:calc.detail,
     totalNota:'',
-    akumulasiTotalNota:t.nota,
-    totalBayar:t.bayar,
+    akumulasiTotalNota:'',
+    totalBayar:'',
     bayarNota:calc.bayar,
+    detailBayar:calc.bayar,
     hutang:calc.sisa,
     sisaNota:calc.sisa,
     sisaHutang:calc.sisa,
@@ -11723,6 +11736,14 @@ function _clickupSupplierNoteFields(d,n,idx){
 function _clickupSupplierNoteMarkdown(d,n,idx){
   var t=_clickupSupplierTotals(d);
   var calc=_clickupSupplierNoteCalc(d,idx);
+  var payLines=['','### History Bayar Terkait','| Tanggal | Keterangan | Detail Bayar | Bukti |','|---|---|---:|---|'];
+  if(calc.payments&&calc.payments.length){
+    calc.payments.forEach(function(b){
+      payLines.push('| '+(b.tgl||'-')+' | '+(b.keterangan||'-')+' | Rp '+fmt(b.jumlah)+' | '+(b.bukti?'Ada bukti':'-')+' |');
+    });
+  }else{
+    payLines.push('| - | - | Rp 0 | - |');
+  }
   return [
     '## Nota Supplier AJW',
     '',
@@ -11735,13 +11756,11 @@ function _clickupSupplierNoteMarkdown(d,n,idx){
     '| Kode | '+((n&&n.kode)||'-')+' |',
     '| Keterangan | '+((n&&n.keterangan)||'-')+' |',
     '| Detail Nota | Rp '+fmt(calc.detail)+' |',
-    '| Bayar Nota | Rp '+fmt(calc.bayar)+' |',
+    '| Detail Bayar | Rp '+fmt(calc.bayar)+' |',
     '| Sisa Nota | Rp '+fmt(calc.sisa)+' |',
-    '| Akumulasi Total Nota | Rp '+fmt(t.nota)+' |',
-    '| History Total Bayar | Rp '+fmt(t.bayar)+' |',
     '| Status Parent | '+_clickupSupplierStatusName(d)+' |',
     '| ID AJW | '+String(d.id||'')+'-nota-'+idx+' |'
-  ].join('\n');
+  ].concat(payLines).join('\n');
 }
 function _clickupSupplierStatus(d){
   return _clickupSupplierTaskStatusName(_clickupSupplierStatusName(d));
@@ -11795,6 +11814,27 @@ function _clickupSupplierUploadAttachments(d, taskId){
       return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/attachment','POST',{attachment:img}).then(function(){
         uploaded[img.key]=isoNow();
         d.clickupAttachmentKeys=uploaded;
+        _clickupSupplierPatchLocalRow(d);
+      });
+    });
+  });
+  return chain;
+}
+function _clickupSupplierUploadNoteAttachments(d, idx, taskId){
+  if(!d||!taskId) return Promise.resolve();
+  var calc=_clickupSupplierNoteCalc(d,idx);
+  var root=d.clickupNoteAttachmentKeys||{};
+  var uploaded=root[String(idx)]||{};
+  var imgs=(calc.payments||[]).filter(function(b){return b.bukti;}).map(function(b,i){
+    return {key:'note-'+idx+'-bayar-'+b.idx+'-'+_clickupHashText(String(b.bukti).slice(0,160)),dataUrl:b.bukti,filename:'bukti-bayar-nota-'+(d.id||'nota')+'-'+(idx+1)+'-'+(i+1)+'.jpg'};
+  }).filter(function(x){return x.dataUrl&&!uploaded[x.key];});
+  var chain=Promise.resolve();
+  imgs.forEach(function(img){
+    chain=chain.then(function(){
+      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId)+'/attachment','POST',{attachment:img}).then(function(){
+        uploaded[img.key]=isoNow();
+        root[String(idx)]=uploaded;
+        d.clickupNoteAttachmentKeys=root;
         _clickupSupplierPatchLocalRow(d);
       });
     });
@@ -11866,7 +11906,10 @@ function _clickupSupplierSyncSubtasks(d,parentId){
           var cf=_clickupSupplierNoteFields(d,n,idx);
           return Promise.all(cf.map(function(field){
             return _clickupSupplierRequest('/task/'+encodeURIComponent(tid)+'/field/'+encodeURIComponent(field.id),'POST',{value:field.value}).catch(function(){});
-          })).then(function(){ ids.push(tid); return res; });
+          })).then(function(){
+            ids.push(tid);
+            return _clickupSupplierUploadNoteAttachments(d,idx,tid).then(function(){ return res; });
+          });
         });
       }
       return _clickupSupplierCreateTaskInList(_clickupSupplierNotePayload(d,n,idx,true,parentId)).then(function(res){
@@ -11875,6 +11918,7 @@ function _clickupSupplierSyncSubtasks(d,parentId){
           ids.push(res.id);
           d.clickupSubtaskIds={nota:noteKnown};
           _clickupSupplierPatchLocalRow(d);
+          return _clickupSupplierUploadNoteAttachments(d,idx,res.id).then(function(){ return res; });
         }
         return res;
       });
@@ -11990,7 +12034,7 @@ function _clickupSupplierSaveCfg(){
   cfg.clickupSupplierStatusPartial=(document.getElementById('CU-ST-PART')||{}).value||'';
   cfg.clickupSupplierStatusPaid=(document.getElementById('CU-ST-PAID')||{}).value||'';
   var fields={};
-  ['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaNota','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'].forEach(function(k){
+  ['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','detailBayar','hutang','sisaNota','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'].forEach(function(k){
     var el=document.getElementById('CU-F-'+k); if(el&&el.value.trim()) fields[k]=el.value.trim();
   });
   cfg.clickupSupplierFields=fields;
@@ -12009,7 +12053,7 @@ function _clickupSupplierStatusHtml(){
   var synced=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
   var failed=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
   var f=c.fields||{};
-  var fieldKeys=['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaNota','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'];
+  var fieldKeys=['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','detailBayar','hutang','sisaNota','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'];
   var h='<div class="card" style="margin-bottom:11px;border:1px solid var(--bd);background:var(--bg2)">';
   h+='<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:var(--tx)">Sync ClickUp</div><div style="font-size:11px;color:var(--tx2);margin-top:3px">AJW → ClickUp satu arah. ClickUp jadi dashboard dan backup realtime.</div></div><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="sup-soft-chip"><span>Status</span><b>'+(c.enabled?'Aktif':'Nonaktif')+'</b></span><span class="sup-soft-chip"><span>Synced</span><b>'+synced+'</b></span><span class="sup-soft-chip"><span>Queue</span><b>'+q.length+'</b></span><span class="sup-soft-chip"><span>Failed</span><b>'+failed+'</b></span></div></div>';
   h+='<div style="display:grid;grid-template-columns:90px minmax(180px,1fr) minmax(150px,.7fr) repeat(3,minmax(100px,.45fr));gap:8px;margin-top:10px;align-items:end">';
