@@ -12132,6 +12132,7 @@ function _clickupSupplierSaveCfg(){
 }
 function _clickupSupplierSyncNow(){
   if(!_clickupSupplierReady()){ toast('Isi token ClickUp dan List ID dulu','warn'); return; }
+  if(!(supplierHutang||[]).length){ _clickupLog('warn','Tidak ada data hutang supplier','Data AJW kosong, tidak ada yang dikirim ke ClickUp.'); }
   _clickupSupplierQueueChanged();
   _clickupSupplierProcess();
   toast('Sync ClickUp masuk antrean','info');
@@ -12272,6 +12273,9 @@ function _clickupToolsSaveCfg(){
   cfg.clickupSpaceId=val('CUT-SPACE')||cfg.clickupSpaceId||'';
   cfg.clickupFolderId=val('CUT-FOLDER')||cfg.clickupFolderId||'';
   cfg.clickupSupplierListId=val('CUT-LIST-HUTANG')||cfg.clickupSupplierListId||'';
+  cfg.clickupSupplierListId=_clickupNormalizeListId(cfg.clickupSupplierListId);
+  cfg.clickupListMappings=cfg.clickupListMappings||{};
+  if(cfg.clickupSupplierListId) cfg.clickupListMappings.hutang_supplier={key:'hutang_supplier',id:cfg.clickupSupplierListId,updatedAt:isoNow()};
   cfg.clickupSupplierStatusOpen=val('CUT-ST-OPEN')||'HUTANG';
   cfg.clickupSupplierStatusPartial=val('CUT-ST-PART')||'CICIL';
   cfg.clickupSupplierStatusPaid=val('CUT-ST-PAID')||'LUNAS';
@@ -12327,6 +12331,60 @@ function _clickupToolsLoadLists(){
     if(typeof _renderTools==='function') _renderTools('clickup');
   });
 }
+function _clickupToolsAutoDetectAll(){
+  _clickupToolsSaveCfg();
+  var cfg=getCfg()||{};
+  if(!cfg.clickupToken){ toast('Isi access token dulu','warn'); return; }
+  var foundTeams=[], foundSpaces=[], foundFolders=[], foundLists=[];
+  _clickupLog('info','Auto detect ClickUp dimulai','Membaca workspace, space, folder, dan list.');
+  _clickupSupplierRequest('/team','GET').then(function(teamRes){
+    foundTeams=teamRes.teams||[];
+    return Promise.all(foundTeams.map(function(team){
+      return _clickupSupplierRequest('/team/'+encodeURIComponent(team.id)+'/space?archived=false','GET').then(function(spaceRes){
+        (spaceRes.spaces||[]).forEach(function(s){ s._teamId=team.id; s._teamName=team.name||''; foundSpaces.push(s); });
+      }).catch(function(e){ _clickupLog('error','Load spaces gagal',((team&&team.name)||team.id)+': '+e.message); });
+    }));
+  }).then(function(){
+    return Promise.all(foundSpaces.map(function(space){
+      return Promise.all([
+        _clickupSupplierRequest('/space/'+encodeURIComponent(space.id)+'/folder?archived=false','GET').then(function(folderRes){
+          (folderRes.folders||[]).forEach(function(f){ f._spaceId=space.id; f._spaceName=space.name||''; f._teamId=space._teamId; f._teamName=space._teamName; foundFolders.push(f); });
+        }).catch(function(e){ _clickupLog('error','Load folders gagal',((space&&space.name)||space.id)+': '+e.message); }),
+        _clickupSupplierRequest('/space/'+encodeURIComponent(space.id)+'/list?archived=false','GET').then(function(listRes){
+          (listRes.lists||[]).forEach(function(l){ l._spaceId=space.id; l._spaceName=space.name||''; l._teamId=space._teamId; l._teamName=space._teamName; foundLists.push(l); });
+        }).catch(function(e){ _clickupLog('error','Load space lists gagal',((space&&space.name)||space.id)+': '+e.message); })
+      ]);
+    }));
+  }).then(function(){
+    return Promise.all(foundFolders.map(function(folder){
+      return _clickupSupplierRequest('/folder/'+encodeURIComponent(folder.id)+'/list?archived=false','GET').then(function(listRes){
+        (listRes.lists||[]).forEach(function(l){ l._folderId=folder.id; l._folderName=folder.name||''; l._spaceId=folder._spaceId; l._spaceName=folder._spaceName; l._teamId=folder._teamId; l._teamName=folder._teamName; foundLists.push(l); });
+      }).catch(function(e){ _clickupLog('error','Load folder lists gagal',((folder&&folder.name)||folder.id)+': '+e.message); });
+    }));
+  }).then(function(){
+    var seen={}, lists=[];
+    foundLists.forEach(function(l){
+      if(!l||!l.id||seen[l.id]) return;
+      seen[l.id]=1;
+      lists.push({id:l.id,name:l.name||'',folder:l._folderName||((l.folder&&l.folder.name)||''),folderId:l._folderId||((l.folder&&l.folder.id)||''),space:l._spaceName||((l.space&&l.space.name)||''),spaceId:l._spaceId||((l.space&&l.space.id)||''),team:l._teamName||'',teamId:l._teamId||''});
+    });
+    var c=getCfg()||{};
+    c.clickupDetectedTeams=foundTeams.map(function(t){return {id:t.id,name:t.name||''};});
+    c.clickupDetectedSpaces=foundSpaces.map(function(s){return {id:s.id,name:s.name||'',team:s._teamName||'',teamId:s._teamId||''};});
+    c.clickupDetectedFolders=foundFolders.map(function(f){return {id:f.id,name:f.name||'',space:f._spaceName||'',spaceId:f._spaceId||'',team:f._teamName||'',teamId:f._teamId||''};});
+    c.clickupDetectedLists=lists;
+    if(!c.clickupTeamId && foundTeams[0]) c.clickupTeamId=foundTeams[0].id;
+    if(!c.clickupSpaceId && foundSpaces[0]) c.clickupSpaceId=foundSpaces[0].id;
+    if(!c.clickupFolderId && foundFolders[0]) c.clickupFolderId=foundFolders[0].id;
+    saveCfg(c);
+    _clickupLog('success','Auto detect ClickUp selesai',foundTeams.length+' team, '+foundSpaces.length+' space, '+foundFolders.length+' folder, '+lists.length+' list.');
+    toast('Auto detect selesai: '+lists.length+' list','success',6500);
+    if(typeof _renderTools==='function') _renderTools('clickup');
+  }).catch(function(e){
+    _clickupLog('error','Auto detect ClickUp gagal',e.message);
+    toast('Auto detect gagal: '+e.message,'error',6500);
+  });
+}
 function _clickupToolsMapFields(){
   _clickupToolsSaveCfg();
   _clickupSupplierLoadFieldMap().then(function(mapped){
@@ -12350,6 +12408,24 @@ function _clickupToolsSelectList(id){
   if(el) el.value=id||'';
   _clickupToolsSaveCfg();
 }
+function _clickupToolsAssignList(key,id){
+  var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{};
+  maps[key]={key:key,id:id||'',updatedAt:isoNow()};
+  cfg.clickupListMappings=maps;
+  if(key==='hutang_supplier') cfg.clickupSupplierListId=id||cfg.clickupSupplierListId||'';
+  saveCfg(cfg);
+  _clickupLog('success','List mapping disimpan',key+' → '+id);
+  if(typeof _renderTools==='function') _renderTools('clickup');
+}
+function _clickupToolsAddManualList(){
+  var name=(document.getElementById('CUT-MAP-NAME')||{}).value||'';
+  var id=(document.getElementById('CUT-MAP-ID')||{}).value||'';
+  name=String(name).trim();
+  id=_clickupNormalizeListId(String(id).trim());
+  if(!name||!id){ toast('Isi nama mapping dan URL/ID list','warn'); return; }
+  var key=name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'')||('list_'+Date.now());
+  _clickupToolsAssignList(key,id);
+}
 function _clickupToolsRebuild(){
   var known=_clickupSupplierKnownLoad();
   Object.keys(known).forEach(function(id){ delete known[id]; });
@@ -12363,6 +12439,7 @@ function _clickupToolsRebuild(){
   try{localStorage.setItem('ajw_supplier',JSON.stringify(supplierHutang||[]));}catch(e){}
   _clickupSupplierQueueSave([]);
   _clickupSupplierQueueChanged();
+  _clickupSupplierProcess();
   _clickupLog('warn','Rebuild sync ClickUp dimulai','Mapping lokal task direset agar AJW membuat ulang/update dari data website.');
   toast('Rebuild sync masuk antrean','info');
   if(typeof _renderTools==='function') _renderTools('clickup');
@@ -12370,6 +12447,7 @@ function _clickupToolsRebuild(){
 function _renderToolsClickupIntegration(){
   var cfg=getCfg()||{}, logs=_clickupLogLoad(), q=_clickupSupplierQueueLoad();
   var lists=cfg.clickupDetectedLists||[], fields=cfg.clickupDetectedFields||[];
+  var maps=cfg.clickupListMappings||{};
   var synced=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
   var failed=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
   var h='';
@@ -12377,15 +12455,16 @@ function _renderToolsClickupIntegration(){
   h+='<div style="display:grid;grid-template-columns:minmax(320px,.9fr) minmax(420px,1.1fr);gap:12px;margin-bottom:12px">';
   h+='<div class="card"><div style="font-size:14px;font-weight:900;color:var(--tx);margin-bottom:10px">Koneksi API</div>';
   h+='<label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:800;margin-bottom:10px"><input id="CUT-EN" type="checkbox" '+(cfg.clickupSupplierEnabled?'checked':'')+'> Aktifkan realtime AJW → ClickUp</label>';
-  h+='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cfg.clickupToken||'')+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cfg.clickupProxyUrl||'/api/clickup/proxy')+'" placeholder="/api/clickup/proxy"></div><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cfg.clickupSupplierListId||'')+'" placeholder="Tempel URL list atau ID list"></div></div>';
+  h+='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cfg.clickupToken||'')+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cfg.clickupProxyUrl||'/api/clickup/proxy')+'" placeholder="/api/clickup/proxy"></div><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||'')+'" placeholder="Tempel URL list atau ID list"></div></div>';
   h+='<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:900;color:var(--tx)">OAuth App</summary><div style="display:grid;gap:9px;margin-top:9px"><div class="g2"><div><label class="lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cfg.clickupClientId||'')+'"></div><div><label class="lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cfg.clickupClientSecret||'')+'"></div></div><div><label class="lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cfg.clickupRedirectUri||location.href.split('#')[0])+'"></div><div><label class="lbl">OAuth Code</label><input id="CUT-CODE" class="fi" placeholder="Tempel code dari URL redirect"></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btnp" onclick="_clickupToolsExchangeCode()">Tukar Code → Token</button></div></div></details>';
   h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px"><button class="btnp" onclick="_clickupToolsSaveCfg()">Simpan</button><button class="btns" onclick="_clickupToolsTest()">Test Token</button><button class="btns" onclick="_clickupToolsSyncNow()">Sync Sekarang</button><button class="btns" onclick="_clickupToolsRebuild()">Rebuild Sync</button></div></div>';
   h+='<div class="card"><div style="font-size:14px;font-weight:900;color:var(--tx);margin-bottom:10px">Workspace, List, dan Field</div>';
   h+='<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cfg.clickupTeamId||'')+'"></div><div><label class="lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cfg.clickupSpaceId||'')+'"></div><div><label class="lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cfg.clickupFolderId||'')+'"></div></div>';
   h+='<div class="g3" style="margin-bottom:9px"><div><label class="lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cfg.clickupSupplierStatusOpen||'HUTANG')+'"></div><div><label class="lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cfg.clickupSupplierStatusPartial||'CICIL')+'"></div><div><label class="lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cfg.clickupSupplierStatusPaid||'LUNAS')+'"></div></div>';
-  h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px"><button class="btns" onclick="_clickupToolsLoadLists()">Load Lists</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Mapping Field</button></div>';
-  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><div style="font-size:12px;font-weight:900;color:var(--tx);margin-bottom:6px">List Terdeteksi</div><div style="max-height:210px;overflow:auto;border:1px solid var(--bd);border-radius:8px">'+(lists.length?lists.map(function(l){return '<button onclick="_clickupToolsSelectList(\''+escAttr(l.id)+'\')" style="width:100%;text-align:left;padding:9px 10px;border:0;border-bottom:1px solid var(--bd);background:var(--bg2);color:var(--tx);cursor:pointer"><b>'+esc(l.name||'-')+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(l.id||'')+'</div></button>';}).join(''):'<div style="padding:14px;color:var(--tx2);font-size:12px">Belum load list.</div>')+'</div></div>';
+  h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px"><button class="btnp" onclick="_clickupToolsAutoDetectAll()">Auto Detect Semua</button><button class="btns" onclick="_clickupToolsLoadLists()">Load Lists Manual</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Mapping Field</button></div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><div style="font-size:12px;font-weight:900;color:var(--tx);margin-bottom:6px">List Terdeteksi</div><div style="max-height:250px;overflow:auto;border:1px solid var(--bd);border-radius:8px">'+(lists.length?lists.map(function(l){return '<div style="padding:9px 10px;border-bottom:1px solid var(--bd);background:var(--bg2)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b>'+esc(l.name||'-')+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(l.id||'')+'</div><div style="font-size:10px;color:var(--tx2)">'+esc([l.team,l.space,l.folder].filter(Boolean).join(' / ')||'-')+'</div></div><button class="btnsm" onclick="_clickupToolsAssignList(\'hutang_supplier\',\''+escAttr(l.id)+'\')">Pakai</button></div></div>';}).join(''):'<div style="padding:14px;color:var(--tx2);font-size:12px">Belum ada list. Klik Auto Detect Semua.</div>')+'</div></div>';
   h+='<div><div style="font-size:12px;font-weight:900;color:var(--tx);margin-bottom:6px">Custom Field Terdeteksi</div><div style="max-height:210px;overflow:auto;border:1px solid var(--bd);border-radius:8px">'+(fields.length?fields.map(function(f){return '<div style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px"><b>'+esc(f.name||'-')+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(f.type||'')+' • '+esc(f.id||'')+'</div></div>';}).join(''):'<div style="padding:14px;color:var(--tx2);font-size:12px">Belum auto mapping field.</div>')+'</div></div></div></div></div>';
+  h+='<div class="card" style="margin-bottom:12px"><div style="font-size:14px;font-weight:900;color:var(--tx);margin-bottom:10px">Mapping List AJW → ClickUp</div><div class="g2" style="margin-bottom:10px"><div><label class="lbl">Nama Mapping Baru</label><input id="CUT-MAP-NAME" class="fi" placeholder="Contoh: Hutang Supplier / Refund / Komplain"></div><div><label class="lbl">URL / ID List</label><input id="CUT-MAP-ID" class="fi" placeholder="Tempel URL list atau ID"></div></div><div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px"><button class="btnp" onclick="_clickupToolsAddManualList()">Tambah Mapping</button><button class="btns" onclick="_clickupToolsAssignList(\'hutang_supplier\',document.getElementById(\'CUT-LIST-HUTANG\').value)">Simpan Hutang Supplier</button></div><div style="display:grid;gap:7px">'+(Object.keys(maps).length?Object.keys(maps).map(function(k){var m=maps[k]||{};return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg2)"><div><b>'+esc(k.replace(/_/g,' '))+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(m.id||'-')+'</div></div><button class="btnsm" onclick="_clickupToolsSelectList(\''+escAttr(m.id||'')+'\')">Isi ke Hutang</button></div>';}).join(''):'<div class="tools-empty">Belum ada mapping list manual.</div>')+'</div></div>';
   h+='<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:14px;font-weight:900;color:var(--tx)">Log Error & Aktivitas</div><div style="font-size:11px;color:var(--tx2);margin-top:3px">Field kurang, API gagal, task hilang, dan sync ulang dicatat di sini.</div></div><button class="btns" onclick="_clickupLogClear()">Bersihkan Log</button></div>';
   h+='<div style="display:grid;gap:7px;max-height:330px;overflow:auto">'+(logs.length?logs.map(function(l){var c=l.level==='error'?'#B91C1C':(l.level==='warn'?'#92400E':'#166534');var bg=l.level==='error'?'#FEF2F2':(l.level==='warn'?'#FFFBEB':'#F0FDF4');return '<div style="padding:9px 11px;border-radius:8px;border:1px solid var(--bd);background:'+bg+'"><div style="display:flex;justify-content:space-between;gap:10px"><b style="color:'+c+'">'+esc(l.title||'-')+'</b><span style="font-size:10px;color:var(--tx2)">'+esc(l.ts?fmtD(l.ts):'-')+'</span></div><div style="font-size:11px;color:var(--tx2);margin-top:4px">'+esc(l.detail||'-')+'</div></div>';}).join(''):'<div style="color:var(--tx2);font-size:12px;padding:14px;border:1px dashed var(--bd);border-radius:8px">Belum ada log.</div>')+'</div></div>';
   return h;
