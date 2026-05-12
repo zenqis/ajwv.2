@@ -11434,6 +11434,7 @@ function _clickupSupplierFieldAliases(){
     totalBayar:['history total bayar','total bayar','rekap bayar','terbayar'],
     bayarNota:['bayar nota','pembayaran nota','bayar'],
     hutang:['wref','hutang','saldo hutang','sisa hutang'],
+    sisaNota:['sisa nota','saldo nota','selisih nota'],
     sisaHutang:['sisa hutang','saldo hutang','hutang tersisa'],
     relHutangNota:['rel hutang nota','relasi hutang nota','hutang nota'],
     status:['status hutang','status'],
@@ -11574,6 +11575,12 @@ function _clickupSupplierNoteCalc(d, idx){
   var sisa=Math.max(0,val-bayar);
   return {detail:val,bayar:bayar,sisa:sisa,status:_clickupSupplierStatusName(d)};
 }
+function _clickupSupplierParentStatusFromNoteCalc(d, calc){
+  var parent=_clickupSupplierStatusName(d);
+  if(parent==='LUNAS') return 'LUNAS';
+  if(parent==='CICIL') return (calc&&calc.bayar>0)?'CICIL':'HUTANG';
+  return 'HUTANG';
+}
 function _clickupSupplierTaskName(d){
   var first=(d.nota&&d.nota[0])||{};
   var doc=first.noDok?(' - '+first.noDok):'';
@@ -11635,6 +11642,7 @@ function _clickupSupplierCustomFields(d){
     totalBayar:t.bayar,
     bayarNota:t.bayar,
     hutang:t.saldo,
+    sisaNota:t.saldo,
     sisaHutang:t.saldo,
     status:status,
     tanggalBayar:latestPay.tgl||'',
@@ -11683,7 +11691,7 @@ function _clickupSupplierFieldValue(field, value){
 function _clickupSupplierNoteFields(d,n,idx){
   var fields=_clickupSupplierFieldsByKey(), t=_clickupSupplierTotals(d);
   var calc=_clickupSupplierNoteCalc(d,idx);
-  var period=_clickupSupplierPeriod(d), status=_clickupSupplierStatusName(d);
+  var period=_clickupSupplierPeriod(d), status=_clickupSupplierParentStatusFromNoteCalc(d,calc);
   var map={
     supplier:d.namaSupplier||'',
     bulan:period,
@@ -11697,6 +11705,7 @@ function _clickupSupplierNoteFields(d,n,idx){
     totalBayar:t.bayar,
     bayarNota:calc.bayar,
     hutang:calc.sisa,
+    sisaNota:calc.sisa,
     sisaHutang:calc.sisa,
     status:status,
     keterangan:(n&&n.keterangan)||'',
@@ -11735,9 +11744,13 @@ function _clickupSupplierNoteMarkdown(d,n,idx){
   ].join('\n');
 }
 function _clickupSupplierStatus(d){
-  var c=_clickupSupplierCfg(), s=_clickupSupplierStatusName(d);
+  return _clickupSupplierTaskStatusName(_clickupSupplierStatusName(d));
+}
+function _clickupSupplierTaskStatusName(s){
+  var c=_clickupSupplierCfg();
+  s=String(s||'').toUpperCase();
   if(s==='LUNAS') return c.statusPaid||'LUNAS';
-  if(s==='CICIL') return c.statusPartial||'CICIL';
+  if(s==='CICIL'||s==='SEBAGIAN') return c.statusPartial||'CICIL';
   return c.statusOpen||'HUTANG';
 }
 function _clickupSupplierRequest(path, method, body){
@@ -11812,7 +11825,7 @@ function _clickupSupplierNotePayload(d,n,idx,includeCustom,parentId){
     notify_all:false
   };
   if(parentId) payload.parent=parentId;
-  var st=_clickupSupplierStatus(d);
+  var st=_clickupSupplierTaskStatusName(_clickupSupplierParentStatusFromNoteCalc(d,_clickupSupplierNoteCalc(d,idx)));
   if(st) payload.status=st;
   var cf=includeCustom?_clickupSupplierNoteFields(d,n,idx):[];
   if(cf.length) payload.custom_fields=cf;
@@ -11977,7 +11990,7 @@ function _clickupSupplierSaveCfg(){
   cfg.clickupSupplierStatusPartial=(document.getElementById('CU-ST-PART')||{}).value||'';
   cfg.clickupSupplierStatusPaid=(document.getElementById('CU-ST-PAID')||{}).value||'';
   var fields={};
-  ['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'].forEach(function(k){
+  ['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaNota','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'].forEach(function(k){
     var el=document.getElementById('CU-F-'+k); if(el&&el.value.trim()) fields[k]=el.value.trim();
   });
   cfg.clickupSupplierFields=fields;
@@ -11996,7 +12009,7 @@ function _clickupSupplierStatusHtml(){
   var synced=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
   var failed=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
   var f=c.fields||{};
-  var fieldKeys=['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'];
+  var fieldKeys=['supplier','bulan','periode','tahun','noDok','tanggalNota','kode','detailNota','totalNota','akumulasiTotalNota','totalBayar','bayarNota','hutang','sisaNota','sisaHutang','relHutangNota','status','tanggalBayar','jumlahBayar','keterangan','ajwId'];
   var h='<div class="card" style="margin-bottom:11px;border:1px solid var(--bd);background:var(--bg2)">';
   h+='<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:var(--tx)">Sync ClickUp</div><div style="font-size:11px;color:var(--tx2);margin-top:3px">AJW → ClickUp satu arah. ClickUp jadi dashboard dan backup realtime.</div></div><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="sup-soft-chip"><span>Status</span><b>'+(c.enabled?'Aktif':'Nonaktif')+'</b></span><span class="sup-soft-chip"><span>Synced</span><b>'+synced+'</b></span><span class="sup-soft-chip"><span>Queue</span><b>'+q.length+'</b></span><span class="sup-soft-chip"><span>Failed</span><b>'+failed+'</b></span></div></div>';
   h+='<div style="display:grid;grid-template-columns:90px minmax(180px,1fr) minmax(150px,.7fr) repeat(3,minmax(100px,.45fr));gap:8px;margin-top:10px;align-items:end">';
