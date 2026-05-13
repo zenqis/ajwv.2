@@ -12884,9 +12884,13 @@ function _clickupIncomeMetric(r){
   r=r||{};
   if(typeof _finIncomeMetrics==='function'){
     var m=_finIncomeMetrics(r)||{};
+    var toko=m.toko||r.toko||r.namaToko||r.store||r.sumber||'Tanpa Toko';
+    var rawMarket=r.marketplace||r.sumber||m.marketplace||toko||'';
+    var market=_clickupIncomeMarketplaceLabel(rawMarket);
+    if(market==='Tanpa Marketplace') market=_clickupIncomeMarketplaceLabel(toko);
     return Object.assign({},r,m,{
-      marketplace:_clickupIncomeMarketplaceLabel(m.marketplace||r.marketplace||r.sumber||r.toko||r.namaToko||r.store||''),
-      toko:m.toko||r.toko||r.namaToko||r.store||r.sumber||'Tanpa Toko'
+      marketplace:market,
+      toko:toko
     });
   }
   var dana=_num(r.danaPenjualanProduk!=null?r.danaPenjualanProduk:r.nominal);
@@ -12901,7 +12905,7 @@ function _clickupIncomeMarketplaceLabel(v){
   var n=_clickupNormName(s);
   if(!n) return 'Tanpa Marketplace';
   if(n.indexOf('shopee')>=0) return 'Shopee';
-  if(n.indexOf('lazada')>=0) return 'Lazada';
+  if(n.indexOf('lazada')>=0||/\blaz\b/.test(n)) return 'Lazada';
   if(n.indexOf('tiktok')>=0||n.indexOf('tik tok')>=0) return 'Tiktok';
   if(n.indexOf('tokopedia')>=0) return 'Tokopedia';
   if(n.indexOf('tanpa')>=0||n.indexOf('manual')>=0||n.indexOf('none')>=0) return 'Tanpa Marketplace';
@@ -12909,6 +12913,23 @@ function _clickupIncomeMarketplaceLabel(v){
 }
 function _clickupIncomeFieldValue(key, field, value){
   if(key==='marketplace') value=_clickupIncomeMarketplaceLabel(value);
+  if(key==='marketplace'){
+    var type=String((field&&field.type)||'').toLowerCase();
+    var cfg=(field&&field.type_config)||{}, opts=(cfg.options||[]);
+    if(type==='drop_down'||type==='labels'){
+      var want=_clickupNormName(value);
+      var alias={shopee:['shopee'],lazada:['lazada','laz'],tiktok:['tiktok','tik tok','tik'],tokopedia:['tokopedia','toped'],tanpamarketplace:['tanpa marketplace','tanpa','manual','none']};
+      var wants=[want].concat(alias[want.replace(/\s+/g,'')]||[]);
+      var hit=null;
+      (opts||[]).some(function(o){
+        var on=_clickupNormName(o&&o.name);
+        hit=wants.some(function(w){ w=_clickupNormName(w); return on===w||on.indexOf(w)>=0||w.indexOf(on)>=0; })?o:null;
+        return !!hit;
+      });
+      if(type==='labels') return hit?[hit.id]:[];
+      return hit?hit.id:undefined;
+    }
+  }
   return _clickupSupplierFieldValue(field,value);
 }
 function _clickupIncomeRows(){
@@ -12917,7 +12938,8 @@ function _clickupIncomeRows(){
     var r=_clickupIncomeMetric(raw), p=_clickupIncomePeriodInfo(r), toko=r.toko||'Tanpa Toko';
     var key=p.key+'|'+toko;
     map[key]=map[key]||{id:'inc_'+_clickupHashText(key),key:key,tahun:p.year,bulan:p.month,periode:p.periode,namaToko:toko,marketplace:_clickupIncomeMarketplaceLabel(r.marketplace||toko||'Tanpa Marketplace'),pemasukanToko:0,modalProduk:0,keuntunganKerugian:0,danaPenjualanProduk:0,count:0,clickupIncomeTaskId:''};
-    if(map[key].marketplace==='Tanpa Marketplace'&&r.marketplace) map[key].marketplace=_clickupIncomeMarketplaceLabel(r.marketplace);
+    var mktFromRow=_clickupIncomeMarketplaceLabel(r.marketplace||toko);
+    if(map[key].marketplace==='Tanpa Marketplace'||mktFromRow!=='Tanpa Marketplace') map[key].marketplace=mktFromRow;
     map[key].pemasukanToko+=_num(r.pemasukanToko);
     map[key].modalProduk+=_num(r.modalProduk);
     map[key].keuntunganKerugian+=_num(r.keuntunganKerugian);
