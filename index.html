@@ -12820,6 +12820,12 @@ function _clickupIncomeFieldsByKey(){
   });
   return out;
 }
+function _clickupIncomeOptionList(field){
+  var cfg=(field&&field.type_config)||{};
+  if(Array.isArray(cfg.options)) return cfg.options;
+  if(cfg.options&&typeof cfg.options==='object') return Object.keys(cfg.options).map(function(k){ var o=cfg.options[k]||{}; if(!o.id) o.id=k; return o; });
+  return [];
+}
 function _clickupIncomeAutoMapFields(fields){
   var aliases=_clickupIncomeFieldAliases(), mapped={}, meta={};
   (fields||[]).forEach(function(f){ if(f&&f.id) meta[f.id]={id:f.id,name:f.name||'',type:f.type||'',type_config:f.type_config||{}}; });
@@ -12922,20 +12928,16 @@ function _clickupIncomeFieldValue(key, field, value){
   if(key==='marketplace') value=_clickupIncomeMarketplaceLabel(value);
   if(key==='marketplace'){
     var type=String((field&&field.type)||'').toLowerCase();
-    var cfg=(field&&field.type_config)||{}, opts=(cfg.options||[]);
+    var opts=_clickupIncomeOptionList(field);
     if(type==='drop_down'||type==='labels'){
-      var want=_clickupNormName(value);
-      var alias={shopee:['shopee'],lazada:['lazada'],tiktok:['tiktok','tik tok'],tokopedia:['tokopedia','toped'],tanpamarketplace:['tanpa marketplace','tanpa','manual','none']};
-      var wants=[want].concat(alias[want.replace(/\s+/g,'')]||[]);
-      var hit=null;
-      (opts||[]).some(function(o){
-        var on=_clickupNormName(o&&o.name);
-        hit=wants.some(function(w){ w=_clickupNormName(w); return on===w; })?o:null;
-        return !!hit;
-      });
+      var want=_clickupNormName(value), compact=want.replace(/\s+/g,'');
+      var alias={shopee:['shopee'],lazada:['lazada','laz'],tiktok:['tiktok','tik tok','tik'],tokopedia:['tokopedia','toped'],tanpamarketplace:['tanpa marketplace','tanpa','manual','none']};
+      var wants=[want].concat(alias[compact]||[]).map(function(w){return _clickupNormName(w);});
+      var hit=(opts||[]).filter(function(o){ return wants.indexOf(_clickupNormName(o&&o.name))>=0; })[0]||
+              (opts||[]).filter(function(o){ var on=_clickupNormName(o&&o.name); return wants.some(function(w){return on.indexOf(w)>=0||w.indexOf(on)>=0;}); })[0];
       if(!hit&&value&&value!=='Tanpa Marketplace') _clickupLog('warn','Marketplace ClickUp tidak cocok','Value AJW: '+value+' | Opsi ClickUp: '+((opts||[]).map(function(o){return o&&o.name;}).filter(Boolean).join(', ')||'-'));
-      if(type==='labels') return hit?[hit.id]:[];
-      return hit?hit.id:undefined;
+      if(type==='labels') return hit?[(hit.id!=null?hit.id:hit.orderindex)]:[];
+      return hit?(hit.id!=null?hit.id:hit.orderindex):undefined;
     }
   }
   return _clickupSupplierFieldValue(field,value);
@@ -12988,6 +12990,13 @@ function _clickupIncomeCustomFields(r){
   Object.keys(map).forEach(function(k){ if(fields[k]){ var val=_clickupIncomeFieldValue(k,fields[k],map[k]); if(val!==undefined&&val!==null) out.push({id:fields[k].id,value:val,key:k}); } });
   return out;
 }
+function _clickupIncomeLogMarketplaceField(row){
+  try{
+    var f=_clickupIncomeFieldsByKey().marketplace||{};
+    var opts=_clickupIncomeOptionList(f).map(function(o){return (o&&o.name)+'='+((o&&o.id)||(o&&o.orderindex)||'');}).join(', ');
+    _clickupLog('warn','Debug Marketplace Pendapatan','AJW: '+((row&&row.marketplace)||'-')+' | Field: '+(f.name||'marketplace')+' / '+(f.id||'-')+' / '+(f.type||'-')+' | Opsi: '+(opts||'-'));
+  }catch(e){}
+}
 function _clickupIncomePayload(r,includeCustom){
   var c=_clickupIncomeCfg(), payload={name:_clickupIncomeTaskName(r),markdown_content:_clickupIncomeMarkdown(r),tags:['ajw','pendapatan'],notify_all:false};
   if(c.statusDone) payload.status=c.statusDone;
@@ -13000,7 +13009,10 @@ function _clickupIncomeUpsert(row,taskId){
   return _clickupIncomeLoadFieldMap().catch(function(){}).then(function(){
     if(taskId){
       return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupIncomePayload(row,false)).then(function(res){
-        return _clickupSetCustomFields(taskId,_clickupIncomeCustomFields(row),'pendapatan').then(function(){return res;});
+        return _clickupSetCustomFields(taskId,_clickupIncomeCustomFields(row),'pendapatan').then(function(done){
+          if(done&&done.failed&&done.failed.join('|').indexOf('marketplace')>=0) _clickupIncomeLogMarketplaceField(row);
+          return res;
+        });
       }).catch(function(err){
         if(!_clickupIsMissingTaskError(err)) throw err;
         var known=_clickupIncomeKnownLoad(); delete known[String(row.id)]; _clickupIncomeKnownSave(known);
@@ -13011,7 +13023,10 @@ function _clickupIncomeUpsert(row,taskId){
     return _clickupCreateTaskInList(c.listId,_clickupIncomePayload(row,true)).then(function(res){
       var tid=(res&&res.id)||'';
       if(!tid) return res;
-      return _clickupSetCustomFields(tid,_clickupIncomeCustomFields(row),'pendapatan').then(function(){return res;});
+      return _clickupSetCustomFields(tid,_clickupIncomeCustomFields(row),'pendapatan').then(function(done){
+        if(done&&done.failed&&done.failed.join('|').indexOf('marketplace')>=0) _clickupIncomeLogMarketplaceField(row);
+        return res;
+      });
     });
   });
 }
