@@ -12890,12 +12890,27 @@ function _clickupIncomeMetric(r){
   var untung=pemasukan-modal;
   return Object.assign({},r,{marketplace:(r.marketplace||r.sumber||'Tanpa Marketplace'),toko:(r.toko||r.sumber||'Tanpa Toko'),danaPenjualanProduk:dana,modalProduk:modal,pemasukanToko:(r.pemasukanTokoSource!=null?_num(r.pemasukanTokoSource):(r.pemasukanToko!=null?_num(r.pemasukanToko):pemasukan)),keuntunganKerugian:(r.keuntunganKerugianSource!=null?_num(r.keuntunganKerugianSource):(r.keuntunganKerugian!=null?_num(r.keuntunganKerugian):untung))});
 }
+function _clickupIncomeMarketplaceLabel(v){
+  var s=String(v||'').trim();
+  var n=_clickupNormName(s);
+  if(!n) return 'Tanpa Marketplace';
+  if(n.indexOf('shopee')>=0) return 'Shopee';
+  if(n.indexOf('lazada')>=0) return 'Lazada';
+  if(n.indexOf('tiktok')>=0||n.indexOf('tik tok')>=0) return 'Tiktok';
+  if(n.indexOf('tokopedia')>=0) return 'Tokopedia';
+  if(n.indexOf('tanpa')>=0||n.indexOf('manual')>=0||n.indexOf('none')>=0) return 'Tanpa Marketplace';
+  return s;
+}
+function _clickupIncomeFieldValue(key, field, value){
+  if(key==='marketplace') value=_clickupIncomeMarketplaceLabel(value);
+  return _clickupSupplierFieldValue(field,value);
+}
 function _clickupIncomeRows(){
   var map={};
   ((typeof _finIncome!=='undefined'&&_finIncome)||[]).forEach(function(raw){
     var r=_clickupIncomeMetric(raw), p=_clickupIncomePeriodInfo(r), toko=r.toko||'Tanpa Toko';
     var key=p.key+'|'+toko;
-    map[key]=map[key]||{id:'inc_'+_clickupHashText(key),key:key,tahun:p.year,bulan:p.month,periode:p.periode,namaToko:toko,marketplace:r.marketplace||'Tanpa Marketplace',pemasukanToko:0,modalProduk:0,keuntunganKerugian:0,danaPenjualanProduk:0,count:0,clickupIncomeTaskId:''};
+    map[key]=map[key]||{id:'inc_'+_clickupHashText(key),key:key,tahun:p.year,bulan:p.month,periode:p.periode,namaToko:toko,marketplace:_clickupIncomeMarketplaceLabel(r.marketplace||'Tanpa Marketplace'),pemasukanToko:0,modalProduk:0,keuntunganKerugian:0,danaPenjualanProduk:0,count:0,clickupIncomeTaskId:''};
     map[key].pemasukanToko+=_num(r.pemasukanToko);
     map[key].modalProduk+=_num(r.modalProduk);
     map[key].keuntunganKerugian+=_num(r.keuntunganKerugian);
@@ -12932,7 +12947,7 @@ function _clickupIncomeCustomFields(r){
   var fields=_clickupIncomeFieldsByKey();
   var map={periode:r.periode,tahun:r.tahun,namaToko:r.namaToko,marketplace:r.marketplace,pemasukanToko:r.pemasukanToko,modalProduk:r.modalProduk,keuntunganKerugian:r.keuntunganKerugian,persentaseKeuntungan:(r.persentaseKeuntungan||0).toFixed(2),danaPenjualanProduk:r.danaPenjualanProduk};
   var out=[];
-  Object.keys(map).forEach(function(k){ if(fields[k]){ var val=_clickupSupplierFieldValue(fields[k],map[k]); if(val!==undefined&&val!==null) out.push({id:fields[k].id,value:val,key:k}); } });
+  Object.keys(map).forEach(function(k){ if(fields[k]){ var val=_clickupIncomeFieldValue(k,fields[k],map[k]); if(val!==undefined&&val!==null) out.push({id:fields[k].id,value:val,key:k}); } });
   return out;
 }
 function _clickupIncomePayload(r,includeCustom){
