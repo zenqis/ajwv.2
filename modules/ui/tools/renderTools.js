@@ -8026,6 +8026,8 @@ function _finImportMarketplace(){
         var toko=_findHeaderValue(row,['Nama Panggilan Toko BigSeller','Nama Panggilan Toko','Nama Toko']);
         if(_finIsImportSummaryRow(row,toko)) return;
         var subsidiDiskon=_num(_findHeaderValue(row,['Subsidi untuk Diskon & Promo','Subsidi Marketplace']));
+        var marketplace=_findHeaderValue(row,['Marketplace','Platform','Channel','Sumber Marketplace']);
+        marketplace=marketplace?marketplace:_guessMarketplaceByStore(toko);
         var rec={
             id:'fininc_'+Date.now()+'_'+imported.length,
             tanggal:_finImportPeriod.to||_todayYMD(),
@@ -8034,8 +8036,8 @@ function _finImportMarketplace(){
           inputMethod:'import',
           importSessionId:sessionId,
           importSessionLabel:sessionLabel,
-          marketplace:_guessMarketplaceByStore(toko),
-          sumber:_guessMarketplaceByStore(toko),
+          marketplace:marketplace,
+          sumber:marketplace,
           toko:toko,
             penandaan:'Import BigSeller',
             catatan:'Import Excel BigSeller',

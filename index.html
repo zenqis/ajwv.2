@@ -11631,6 +11631,11 @@ function _clickupLogClear(){
   try{localStorage.removeItem('ajw_clickup_logs');}catch(e){}
   if(window._toolsSub==='clickup'&&typeof _renderTools==='function') _renderTools('clickup');
 }
+function _clickupToolsRenderSoon(delay){
+  if(window._toolsSub!=='clickup'||typeof _renderTools!=='function') return;
+  if(window._clickupToolsRenderTimer) clearTimeout(window._clickupToolsRenderTimer);
+  window._clickupToolsRenderTimer=setTimeout(function(){ _renderTools('clickup'); }, delay||5000);
+}
 function _clickupSupplierKnownLoad(){
   try{return JSON.parse(localStorage.getItem('ajw_clickup_supplier_known')||'{}')||{};}catch(e){return {};}
 }
@@ -11670,7 +11675,7 @@ function _clickupSupplierQueueChanged(){
 }
 function _clickupSupplierSchedule(){
   if(window._clickupSupplierTimer) clearTimeout(window._clickupSupplierTimer);
-  window._clickupSupplierTimer=setTimeout(_clickupSupplierProcess,1600);
+  window._clickupSupplierTimer=setTimeout(_clickupSupplierProcess,15000);
 }
 function _clickupSupplierTotals(d){
   var totalNota=(d.nota||[]).reduce(function(s,n){return s+(parseFloat(n.nilaiNetto)||0);},0);
@@ -12561,7 +12566,7 @@ function _clickupExpenseQueueItem(id,action,taskId){
 }
 function _clickupExpenseSchedule(){
   if(window._clickupExpenseTimer) clearTimeout(window._clickupExpenseTimer);
-  window._clickupExpenseTimer=setTimeout(_clickupExpenseProcess,1600);
+  window._clickupExpenseTimer=setTimeout(_clickupExpenseProcess,15000);
 }
 function _clickupExpenseQueueChanged(){
   if(!_clickupExpenseReady()) return;
@@ -12748,7 +12753,7 @@ function _clickupExpenseProcess(){
     window._clickupExpenseBusy=false;
     _clickupExpenseQueueSave(q);
     if(q.length) _clickupExpenseSchedule();
-    if(window._toolsSub==='clickup'&&typeof _renderTools==='function') setTimeout(function(){_renderTools('clickup');},500);
+    if(typeof _clickupToolsRenderSoon==='function') _clickupToolsRenderSoon(5000);
   });
 }
 function _clickupExpenseSyncNow(){
@@ -12885,7 +12890,7 @@ function _clickupIncomeMetric(r){
   if(typeof _finIncomeMetrics==='function'){
     var m=_finIncomeMetrics(r)||{};
     var toko=m.toko||r.toko||r.namaToko||r.store||r.sumber||'Tanpa Toko';
-    var market=_clickupIncomeMarketplaceLabel(r.marketplace||'');
+    var market=_clickupIncomeMarketplaceLabel(m.marketplace||r.marketplace||'');
     return Object.assign({},r,m,{
       marketplace:market,
       toko:toko
@@ -12916,14 +12921,15 @@ function _clickupIncomeFieldValue(key, field, value){
     var cfg=(field&&field.type_config)||{}, opts=(cfg.options||[]);
     if(type==='drop_down'||type==='labels'){
       var want=_clickupNormName(value);
-      var alias={shopee:['shopee'],lazada:['lazada','laz'],tiktok:['tiktok','tik tok','tik'],tokopedia:['tokopedia','toped'],tanpamarketplace:['tanpa marketplace','tanpa','manual','none']};
+      var alias={shopee:['shopee'],lazada:['lazada'],tiktok:['tiktok','tik tok'],tokopedia:['tokopedia','toped'],tanpamarketplace:['tanpa marketplace','tanpa','manual','none']};
       var wants=[want].concat(alias[want.replace(/\s+/g,'')]||[]);
       var hit=null;
       (opts||[]).some(function(o){
         var on=_clickupNormName(o&&o.name);
-        hit=wants.some(function(w){ w=_clickupNormName(w); return on===w||on.indexOf(w)>=0||w.indexOf(on)>=0; })?o:null;
+        hit=wants.some(function(w){ w=_clickupNormName(w); return on===w; })?o:null;
         return !!hit;
       });
+      if(!hit&&value&&value!=='Tanpa Marketplace') _clickupLog('warn','Marketplace ClickUp tidak cocok','Value AJW: '+value+' | Opsi ClickUp: '+((opts||[]).map(function(o){return o&&o.name;}).filter(Boolean).join(', ')||'-'));
       if(type==='labels') return hit?[hit.id]:[];
       return hit?hit.id:undefined;
     }
@@ -12934,7 +12940,8 @@ function _clickupIncomeRows(){
   var map={};
   ((typeof _finIncome!=='undefined'&&_finIncome)||[]).forEach(function(raw){
     var r=_clickupIncomeMetric(raw), p=_clickupIncomePeriodInfo(r), toko=r.toko||'Tanpa Toko';
-    var key=p.key+'|'+toko;
+    var market=_clickupIncomeMarketplaceLabel(r.marketplace||'Tanpa Marketplace');
+    var key=p.key+'|'+market+'|'+toko;
     map[key]=map[key]||{id:'inc_'+_clickupHashText(key),key:key,tahun:p.year,bulan:p.month,periode:p.periode,namaToko:toko,marketplace:_clickupIncomeMarketplaceLabel(r.marketplace||'Tanpa Marketplace'),pemasukanToko:0,modalProduk:0,keuntunganKerugian:0,danaPenjualanProduk:0,count:0,clickupIncomeTaskId:''};
     var mktFromRow=_clickupIncomeMarketplaceLabel(r.marketplace||'');
     if(map[key].marketplace==='Tanpa Marketplace'||mktFromRow!=='Tanpa Marketplace') map[key].marketplace=mktFromRow;
@@ -12958,7 +12965,7 @@ function _clickupIncomeQueueItem(id,action,taskId){
   if(!found) q.push({id:key,action:action||'upsert',taskId:taskId||'',tries:0,queuedAt:isoNow(),lastError:''});
   _clickupIncomeQueueSave(q);
 }
-function _clickupIncomeSchedule(){ if(window._clickupIncomeTimer) clearTimeout(window._clickupIncomeTimer); window._clickupIncomeTimer=setTimeout(_clickupIncomeProcess,1600); }
+function _clickupIncomeSchedule(){ if(window._clickupIncomeTimer) clearTimeout(window._clickupIncomeTimer); window._clickupIncomeTimer=setTimeout(_clickupIncomeProcess,15000); }
 function _clickupIncomeQueueChanged(){
   if(!_clickupIncomeReady()) return;
   var known=_clickupIncomeKnownLoad(), current={};
@@ -12966,7 +12973,7 @@ function _clickupIncomeQueueChanged(){
   Object.keys(known).forEach(function(id){ if(!current[id]&&known[id]) _clickupIncomeQueueItem(id,'archive',known[id]); });
   _clickupIncomeSchedule();
 }
-function _clickupIncomeTaskName(r){ return 'Pendapatan '+r.tahun+'-'+r.bulan+' - '+(r.namaToko||'Tanpa Toko'); }
+function _clickupIncomeTaskName(r){ return 'Pendapatan '+r.tahun+'-'+r.bulan+' - '+(r.marketplace||'Tanpa Marketplace')+' - '+(r.namaToko||'Tanpa Toko'); }
 function _clickupIncomeMarkdown(r){
   return ['## Pendapatan AJW','','| Field | Data |','|---|---|','| Periode | '+r.periode+' |','| Tahun | '+r.tahun+' |','| Nama Toko | '+r.namaToko+' |','| Marketplace | '+r.marketplace+' |','| Pemasukan Toko | Rp '+fmt(r.pemasukanToko)+' |','| Modal Produk | Rp '+fmt(r.modalProduk)+' |','| Keuntungan / Kerugian | Rp '+fmt(r.keuntunganKerugian)+' |','| Persentase Keuntungan | '+(r.persentaseKeuntungan||0).toFixed(2)+'% |','| Dana Penjualan Produk | Rp '+fmt(r.danaPenjualanProduk)+' |'].join('\n');
 }
@@ -13011,7 +13018,7 @@ function _clickupIncomeProcess(){
   else work=Promise.resolve({});
   work.then(function(){ if(item.action==='archive'&&known[String(item.id)]){ delete known[String(item.id)]; _clickupIncomeKnownSave(known); } }).catch(function(e){
     item.tries=(item.tries||0)+1; item.lastError=(e&&e.message)||String(e); item.lastTryAt=isoNow(); _clickupLog('error','Sync pendapatan gagal',item.lastError); if(item.tries<3) q.push(item);
-  }).finally(function(){ window._clickupIncomeBusy=false; _clickupIncomeQueueSave(q); if(q.length) _clickupIncomeSchedule(); if(window._toolsSub==='clickup'&&typeof _renderTools==='function') setTimeout(function(){_renderTools('clickup');},500); });
+  }).finally(function(){ window._clickupIncomeBusy=false; _clickupIncomeQueueSave(q); if(q.length) _clickupIncomeSchedule(); if(typeof _clickupToolsRenderSoon==='function') _clickupToolsRenderSoon(5000); });
 }
 function _clickupIncomeSyncNow(){
   if(!_clickupIncomeReady()){ toast('Isi Token dan List ID Pendapatan dulu','warn'); return; }
@@ -13134,7 +13141,7 @@ function _clickupPayrollQueueItem(id,action,taskId){
   if(!found) q.push({id:key,action:action||'upsert',taskId:taskId||'',tries:0,queuedAt:isoNow(),lastError:''});
   _clickupPayrollQueueSave(q);
 }
-function _clickupPayrollSchedule(){ if(window._clickupPayrollTimer) clearTimeout(window._clickupPayrollTimer); window._clickupPayrollTimer=setTimeout(_clickupPayrollProcess,1600); }
+function _clickupPayrollSchedule(){ if(window._clickupPayrollTimer) clearTimeout(window._clickupPayrollTimer); window._clickupPayrollTimer=setTimeout(_clickupPayrollProcess,15000); }
 function _clickupPayrollQueueChanged(){
   if(!_clickupPayrollReady()) return;
   var known=_clickupPayrollKnownLoad(), current={};
@@ -13321,7 +13328,7 @@ function _clickupPayrollProcess(){
     window._clickupPayrollBusy=false;
     _clickupPayrollQueueSave(q);
     if(q.length) _clickupPayrollSchedule();
-    if(window._toolsSub==='clickup'&&typeof _renderTools==='function') setTimeout(function(){_renderTools('clickup');},500);
+    if(typeof _clickupToolsRenderSoon==='function') _clickupToolsRenderSoon(5000);
   });
 }
 function _clickupPayrollSyncNow(){
@@ -13459,6 +13466,7 @@ function _clickupToolsSaveCfg(){
   var cfg=getCfg()||{};
   function val(id){ var el=document.getElementById(id); return el?String(el.value||'').trim():''; }
   cfg.clickupSupplierEnabled=!!(document.getElementById('CUT-EN')&&document.getElementById('CUT-EN').checked);
+  cfg.clickupAutoRepair=!!(document.getElementById('CUT-AUTO-REPAIR')&&document.getElementById('CUT-AUTO-REPAIR').checked);
   cfg.clickupToken=val('CUT-TOKEN')||cfg.clickupToken||'';
   cfg.clickupProxyUrl=val('CUT-PROXY')||cfg.clickupProxyUrl||'/api/clickup/proxy';
   cfg.clickupClientId=val('CUT-CLIENT-ID')||cfg.clickupClientId||'';
@@ -13526,6 +13534,7 @@ function _clickupToolsSaveCfg(){
   cfg.clickupIncomeStatusDone=val('CUT-INCOME-DONE')||'DONE';
   cfg.clickupPayrollStatusDone=val('CUT-PAYROLL-DONE')||'DONE';
   saveCfg(cfg);
+  if(typeof _clickupToolsScheduleRepair==='function') _clickupToolsScheduleRepair();
   _clickupLog('success','Config ClickUp disimpan','Tools > ClickUp Integration');
   toast('Config ClickUp disimpan','success');
 }
@@ -13659,7 +13668,7 @@ function _clickupToolsSyncNow(){
   if(cfg.clickupIncomeListId) _clickupIncomeSyncNow();
   if(cfg.clickupPayrollListId) _clickupPayrollSyncNow();
   _clickupLog('info','Sync ClickUp dimulai','AJW mengirim/update hutang supplier, pengeluaran, pendapatan, dan payroll sesuai mapping aktif.');
-  if(typeof _renderTools==='function') setTimeout(function(){_renderTools('clickup');},1200);
+  if(typeof _clickupToolsRenderSoon==='function') _clickupToolsRenderSoon(5000);
 }
 function _clickupToolsSelectList(id){
   var el=document.getElementById('CUT-LIST-HUTANG');
@@ -13758,21 +13767,22 @@ function _clickupToolsRepairCustomFieldValues(){
       _clickupPayrollQueueChanged();
       if(typeof _clickupPayrollProcess==='function') _clickupPayrollProcess();
     }
-    _clickupLog('info','Auto repair ClickUp berjalan','AJW mengisi ulang custom field yang kosong/terhapus di ClickUp dari data website.');
+    _clickupLog('info','Repair ClickUp berjalan','AJW mengisi ulang custom field yang kosong/terhapus di ClickUp dari data website.');
   }catch(e){
-    try{ _clickupLog('error','Auto repair ClickUp gagal',(e&&e.message)||String(e)); }catch(ex){}
+    try{ _clickupLog('error','Repair ClickUp gagal',(e&&e.message)||String(e)); }catch(ex){}
   }
 }
 function _clickupToolsScheduleRepair(){
   if(window._clickupToolsRepairTimer) clearInterval(window._clickupToolsRepairTimer);
+  var cfg=getCfg()||{};
+  if(!cfg.clickupAutoRepair) return;
   window._clickupToolsRepairTimer=setInterval(function(){
     _clickupToolsRepairCustomFieldValues();
-  },120000);
+  },1800000);
 }
 setTimeout(function(){
   try{
     _clickupToolsScheduleRepair();
-    _clickupToolsRepairCustomFieldValues();
   }catch(e){}
 },3500);
 function _clickupToolsCaptureDraft(){
@@ -13781,6 +13791,8 @@ function _clickupToolsCaptureDraft(){
   ids.forEach(function(id){ var el=document.getElementById(id); if(el) draft[id]=el.value||''; });
   var en=document.getElementById('CUT-EN');
   if(en) draft['CUT-EN']=!!en.checked;
+  var ar=document.getElementById('CUT-AUTO-REPAIR');
+  if(ar) draft['CUT-AUTO-REPAIR']=!!ar.checked;
   try{ localStorage.setItem('ajw_clickup_setup_draft',JSON.stringify(draft)); }catch(e){}
   return draft;
 }
@@ -13846,7 +13858,7 @@ function _renderToolsClickupIntegration(){
   h+='<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.45fr);gap:12px;margin-bottom:12px">';
   h+=panel('Setup Integrasi','Konfigurasi disimpan dalam panel lipat agar dashboard tetap ringan.',
     '<div style="display:grid;grid-template-columns:repeat(2,minmax(230px,1fr));gap:9px">'+
-    setupDetails('api','Koneksi API',cfg.clickupToken?'Token tersimpan':'Token kosong','<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cv('CUT-LIST-HUTANG',cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||''))+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cv('CUT-LIST-EXPENSE',cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||''))+'" placeholder="Tempel URL list Pengeluaran atau ID"></div><div><label class="lbl">List Pendapatan URL / ID</label><input id="CUT-LIST-INCOME" class="fi" value="'+escAttr(cv('CUT-LIST-INCOME',cfg.clickupIncomeListId||((maps.finance_income||{}).id)||''))+'" placeholder="Tempel URL list Pendapatan atau ID"></div></div>')+
+    setupDetails('api','Koneksi API',cfg.clickupToken?'Token tersimpan':'Token kosong','<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--tx)"><input id="CUT-AUTO-REPAIR" type="checkbox" '+(ck('CUT-AUTO-REPAIR',cfg.clickupAutoRepair)?'checked':'')+'> Auto repair tiap 30 menit</label><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cv('CUT-LIST-HUTANG',cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||''))+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cv('CUT-LIST-EXPENSE',cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||''))+'" placeholder="Tempel URL list Pengeluaran atau ID"></div><div><label class="lbl">List Pendapatan URL / ID</label><input id="CUT-LIST-INCOME" class="fi" value="'+escAttr(cv('CUT-LIST-INCOME',cfg.clickupIncomeListId||((maps.finance_income||{}).id)||''))+'" placeholder="Tempel URL list Pendapatan atau ID"></div></div>')+
     setupDetails('oauth','OAuth App','Authorize token','<div style="display:grid;gap:9px"><div class="g2"><div><label class="lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cv('CUT-CLIENT-ID',cfg.clickupClientId||''))+'"></div><div><label class="lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cv('CUT-CLIENT-SECRET',cfg.clickupClientSecret||''))+'"></div></div><div><label class="lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cv('CUT-REDIRECT',cfg.clickupRedirectUri||location.href.split('#')[0]))+'"></div><div><label class="lbl">OAuth Code</label><input id="CUT-CODE" class="fi" value="'+escAttr(cv('CUT-CODE',''))+'" placeholder="Tempel code dari URL redirect"></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btnp" onclick="_clickupToolsExchangeCode()">Tukar Code → Token</button></div></div>')+
     setupDetails('workspace','Workspace & Status','Team/Space/Folder','<div style="display:grid;gap:9px"><div class="g3"><div><label class="lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cv('CUT-TEAM',cfg.clickupTeamId||''))+'"></div><div><label class="lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cv('CUT-SPACE',cfg.clickupSpaceId||''))+'"></div><div><label class="lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cv('CUT-FOLDER',cfg.clickupFolderId||''))+'"></div></div><div class="g3"><div><label class="lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cv('CUT-ST-OPEN',cfg.clickupSupplierStatusOpen||'HUTANG'))+'"></div><div><label class="lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cv('CUT-ST-PART',cfg.clickupSupplierStatusPartial||'CICIL'))+'"></div><div><label class="lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cv('CUT-ST-PAID',cfg.clickupSupplierStatusPaid||'LUNAS'))+'"></div><div><label class="lbl">Status Pendapatan Terupload</label><input id="CUT-INCOME-DONE" class="fi" value="'+escAttr(cv('CUT-INCOME-DONE',cfg.clickupIncomeStatusDone||'DONE'))+'"></div></div></div>')+
     setupDetails('detected','List & Field Terdeteksi',lists.length+' list / '+fieldTotal+' field','<div style="max-height:240px;overflow:auto;display:grid;gap:8px">'+(lists.length?lists.slice(0,20).map(function(l){return '<div style="padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg2)"><div style="display:flex;justify-content:space-between;gap:8px"><div><b style="font-size:12px">'+esc(l.name||'-')+'</b><div style="font-size:10px;color:var(--tx2)">'+esc(l.id||'')+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btnsm" onclick="_clickupToolsAssignList(\'hutang_supplier\',\''+escAttr(l.id)+'\')">Hutang</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_expense\',\''+escAttr(l.id)+'\')">Pengeluaran</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_income\',\''+escAttr(l.id)+'\')">Pendapatan</button></div></div></div>';}).join(''):'<div style="color:var(--tx2);font-size:12px">Belum ada list terdeteksi.</div>')+'</div>')+'</div>');
@@ -13889,7 +13901,7 @@ function _renderToolsClickupIntegration(){
   function kpi(label,value,sub,color){return '<div class="card" style="margin:0;padding:9px 11px;border-top:3px solid '+color+';min-height:72px"><div style="font-size:9px;font-weight:900;color:var(--tx2);text-transform:uppercase">'+label+'</div><div style="font-size:16px;font-weight:900;color:var(--tx);margin-top:4px">'+value+'</div><div style="font-size:10px;color:var(--tx2);margin-top:1px">'+sub+'</div></div>';}
   function box(title,sub,body,right){return '<div class="card" style="margin:0;padding:14px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:11px"><div><div style="font-size:14px;font-weight:900;color:var(--tx)">'+title+'</div><div style="font-size:11px;color:var(--tx2);margin-top:3px">'+sub+'</div></div>'+(right||'')+'</div>'+body+'</div>';}
   function details(id,title,meta,body){var open=false;try{open=localStorage.getItem('ajw_clickup_panel_'+id)==='1';}catch(e){} return '<details '+(open?'open ':'')+'style="border:1px solid var(--bd);border-radius:8px;background:var(--bg2);overflow:hidden" ontoggle="try{localStorage.setItem(\'ajw_clickup_panel_'+id+'\',this.open?\'1\':\'0\')}catch(e){}"><summary style="cursor:pointer;padding:10px 12px;list-style:none"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:12px;color:var(--tx)">'+title+'</b><span style="font-size:10px;color:var(--tx2)">'+meta+'</span></div></summary><div style="padding:0 12px 12px" onclick="event.stopPropagation()">'+body+'</div></details>';}
-  var setupApi='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cv('CUT-LIST-HUTANG',cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||''))+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cv('CUT-LIST-EXPENSE',cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||''))+'" placeholder="Tempel URL list Pengeluaran atau ID"></div><div><label class="lbl">List Pendapatan URL / ID</label><input id="CUT-LIST-INCOME" class="fi" value="'+escAttr(cv('CUT-LIST-INCOME',cfg.clickupIncomeListId||((maps.finance_income||{}).id)||''))+'" placeholder="Tempel URL list Pendapatan atau ID"></div><div><label class="lbl">List Payroll URL / ID</label><input id="CUT-LIST-PAYROLL" class="fi" value="'+escAttr(cv('CUT-LIST-PAYROLL',cfg.clickupPayrollListId||((maps.hr_payroll||{}).id)||''))+'" placeholder="Tempel URL list Payroll atau ID"></div></div>';
+  var setupApi='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--tx)"><input id="CUT-AUTO-REPAIR" type="checkbox" '+(ck('CUT-AUTO-REPAIR',cfg.clickupAutoRepair)?'checked':'')+'> Auto repair tiap 30 menit</label><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cv('CUT-LIST-HUTANG',cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||''))+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cv('CUT-LIST-EXPENSE',cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||''))+'" placeholder="Tempel URL list Pengeluaran atau ID"></div><div><label class="lbl">List Pendapatan URL / ID</label><input id="CUT-LIST-INCOME" class="fi" value="'+escAttr(cv('CUT-LIST-INCOME',cfg.clickupIncomeListId||((maps.finance_income||{}).id)||''))+'" placeholder="Tempel URL list Pendapatan atau ID"></div><div><label class="lbl">List Payroll URL / ID</label><input id="CUT-LIST-PAYROLL" class="fi" value="'+escAttr(cv('CUT-LIST-PAYROLL',cfg.clickupPayrollListId||((maps.hr_payroll||{}).id)||''))+'" placeholder="Tempel URL list Payroll atau ID"></div></div>';
   var oauth='<div style="display:grid;gap:9px"><div class="g2"><div><label class="lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cv('CUT-CLIENT-ID',cfg.clickupClientId||''))+'"></div><div><label class="lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cv('CUT-CLIENT-SECRET',cfg.clickupClientSecret||''))+'"></div></div><div><label class="lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cv('CUT-REDIRECT',cfg.clickupRedirectUri||location.href.split('#')[0]))+'"></div><div><label class="lbl">OAuth Code</label><input id="CUT-CODE" class="fi" value="'+escAttr(cv('CUT-CODE',''))+'" placeholder="Tempel code dari URL redirect"></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btnp" onclick="_clickupToolsExchangeCode()">Tukar Code -> Token</button></div></div>';
   var workspace='<div style="display:grid;gap:9px"><div class="g3"><div><label class="lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cv('CUT-TEAM',cfg.clickupTeamId||''))+'"></div><div><label class="lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cv('CUT-SPACE',cfg.clickupSpaceId||''))+'"></div><div><label class="lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cv('CUT-FOLDER',cfg.clickupFolderId||''))+'"></div></div><div class="g3"><div><label class="lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cv('CUT-ST-OPEN',cfg.clickupSupplierStatusOpen||'HUTANG'))+'"></div><div><label class="lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cv('CUT-ST-PART',cfg.clickupSupplierStatusPartial||'CICIL'))+'"></div><div><label class="lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cv('CUT-ST-PAID',cfg.clickupSupplierStatusPaid||'LUNAS'))+'"></div><div><label class="lbl">Status Pendapatan Terupload</label><input id="CUT-INCOME-DONE" class="fi" value="'+escAttr(cv('CUT-INCOME-DONE',cfg.clickupIncomeStatusDone||'DONE'))+'"></div><div><label class="lbl">Status Payroll Terupload</label><input id="CUT-PAYROLL-DONE" class="fi" value="'+escAttr(cv('CUT-PAYROLL-DONE',cfg.clickupPayrollStatusDone||'DONE'))+'"></div></div></div>';
   var listRows=lists.length?'<div style="overflow:auto"><table class="tbl" style="min-width:420px"><thead><tr><th>Nama List</th><th>ID List</th></tr></thead><tbody>'+lists.slice(0,80).map(function(l){return '<tr><td style="font-weight:800">'+esc(l.name||'-')+'</td><td style="font-family:Consolas,monospace;font-size:11px">'+esc(l.id||'')+'</td></tr>';}).join('')+'</tbody></table></div>':'<div style="color:var(--tx2);font-size:12px">Belum ada list terdeteksi.</div>';
