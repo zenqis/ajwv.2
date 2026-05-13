@@ -19992,6 +19992,121 @@ img#LG{
   setInterval(scheduleLight, 500);
   try{ new MutationObserver(scheduleLight).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']}); }catch(e){}
 })();
+
+/* ============================================================
+   NEON BRIDGE — backend-owned Postgres sync
+   Keeps legacy Supabase UI/functions working while routing data
+   through /api/neon so DATABASE_URL never reaches the browser.
+============================================================ */
+(function(){
+  function neonFetch(path,opt){
+    opt=opt||{};
+    opt.headers=Object.assign({'Content-Type':'application/json'},opt.headers||{});
+    return fetch(path,opt).then(function(r){
+      return r.text().then(function(t){
+        var data=null; try{data=t?JSON.parse(t):null;}catch(e){}
+        if(r.ok) return data;
+        throw new Error((data&&(data.error||data.message))||t||('HTTP '+r.status));
+      });
+    });
+  }
+  function enableNeonBridge(){
+    if(!window.SB) return;
+    SB.init=function(){
+      this.url='/api/neon';
+      this.key='';
+      this.ready=true;
+      return true;
+    };
+    SB.hdr=function(extra){ return Object.assign({'Content-Type':'application/json'},extra||{}); };
+    SB.request=function(method,path,opt){
+      opt=opt||{};
+      var mapped=path;
+      var tableMatch=String(path||'').match(/^\/rest\/v1\/([^?]+)/);
+      if(tableMatch){
+        var table=tableMatch[1];
+        if(method==='DELETE') mapped='/api/neon/replace/'+encodeURIComponent(table);
+        else mapped='/api/neon/table/'+encodeURIComponent(table);
+      }
+      return neonFetch(mapped,{method:method,body:opt.body==null?undefined:(typeof opt.body==='string'?opt.body:JSON.stringify(opt.body))}).then(function(data){
+        return {ok:true,status:200,text:JSON.stringify(data||null),json:data};
+      });
+    };
+    SB.upsertMany=function(table,records){
+      return neonFetch('/api/neon/upsert/'+encodeURIComponent(table),{method:'POST',body:JSON.stringify(records||[])}).then(function(r){return r||{ok:true};});
+    };
+    SB.fetchAll=function(table,order,opt){
+      opt=opt||{};
+      var qs='?limit='+encodeURIComponent(String(opt.limit||5000));
+      if(order) qs+='&order='+encodeURIComponent(order);
+      return neonFetch('/api/neon/table/'+encodeURIComponent(table)+qs,{method:'GET'});
+    };
+    SB.getAll=function(table,order,opt){ return SB.fetchAll(table,order,opt||{}); };
+    SB.replaceTable=function(table,keyField,records){
+      return neonFetch('/api/neon/replace/'+encodeURIComponent(table),{method:'POST',body:JSON.stringify({keyField:keyField||'id',records:records||[]})});
+    };
+    SB.probeTable=function(table){
+      return neonFetch('/api/neon/probe/'+encodeURIComponent(table),{method:'GET'});
+    };
+    SB.test=function(){
+      return neonFetch('/api/neon/status',{method:'GET'}).then(function(r){ return {ok:!!(r&&r.ok), database:'neon', tables:r&&r.tables}; });
+    };
+    window.testSupabaseConnection=function(){
+      return SB.test().then(function(){
+        toast('Neon terhubung','success');
+        return {ok:true};
+      }).catch(function(err){
+        toast('Neon error: '+(err.message||err),'error');
+        throw err;
+      });
+    };
+    if(typeof runSupabaseSchemaAudit==='function'){
+      var oldAudit=runSupabaseSchemaAudit;
+      window.runSupabaseSchemaAudit=function(silent){
+        return neonFetch('/api/neon/status',{method:'GET'}).then(function(status){
+          var bad=(status.tables||[]).filter(function(t){return !t.ok;}).map(function(t){return {table:t.table,ok:false,message:t.error||''};});
+          window._sbSchemaAudit={ok:bad.length===0,checkedAt:new Date().toISOString(),missingTables:bad.map(function(x){return x.table;}),issues:bad,financeReady:true,logReady:true,sql:''};
+          try{localStorage.setItem('ajw_sb_schema_audit',JSON.stringify(window._sbSchemaAudit));}catch(e){}
+          if(!silent) toast(bad.length?'Neon audit: '+bad.length+' table bermasalah':'Neon schema siap','success');
+          return window._sbSchemaAudit;
+        }).catch(function(err){
+          if(!silent) toast('Neon audit gagal: '+(err.message||err),'error');
+          return oldAudit(silent);
+        });
+      };
+    }
+    var oldSync=window.syncAllToSupabase;
+    window.syncAllToNeon=window.syncAllToSupabase=function(silent){
+      return oldSync(silent).then(function(res){
+        var c=getCfg(); c.lastSupabaseSync=new Date().toISOString(); c.lastNeonSync=c.lastSupabaseSync; saveCfg(c);
+        if(!silent) toast('Sync Neon berhasil','success');
+        return res;
+      });
+    };
+    var oldLoad=window.loadFromSupabase;
+    window.loadFromNeon=window.loadFromSupabase=function(force){
+      toast(force?'Load penuh dari Neon...':'Load hemat dari Neon...','info',5000);
+      return oldLoad(force);
+    };
+  }
+  function relabelNeon(){
+    var root=document.getElementById('V-admin')||document.body;
+    if(!root) return;
+    root.querySelectorAll('*').forEach(function(el){
+      if(el.childNodes&&el.childNodes.length===1&&el.childNodes[0].nodeType===3){
+        el.textContent=el.textContent.replace(/Supabase/g,'Neon');
+      }
+    });
+    var url=document.getElementById('SB-URL'); if(url){url.placeholder='/api/neon'; url.value='Backend Neon'; url.disabled=true;}
+    var key=document.getElementById('SB-KEY'); if(key){key.placeholder='DATABASE_URL disimpan di server'; key.value='server-side'; key.disabled=true;}
+  }
+  var oldRenderAdmin=window.renderAdmin;
+  if(typeof oldRenderAdmin==='function'){
+    window.renderAdmin=function(){ oldRenderAdmin.apply(this,arguments); setTimeout(relabelNeon,0); };
+  }
+  enableNeonBridge();
+  document.addEventListener('DOMContentLoaded',function(){ enableNeonBridge(); relabelNeon(); });
+})();
 </script>
 </body>
 </html>

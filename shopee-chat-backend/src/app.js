@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
 import { registerAiGatewayRoutes } from "./ai/controller.js";
+import { registerNeonRoutes } from "./neon.js";
 
 import {
   deleteAiKnowledge,
@@ -85,6 +86,7 @@ app.use(cors());
 app.use(express.json({ limit: "30mb" }));
 app.use(express.text({ type: "*/*", limit: "30mb" }));
 registerAiGatewayRoutes(app);
+registerNeonRoutes(app);
 
 function clickupToken(req, body = {}) {
   return String(

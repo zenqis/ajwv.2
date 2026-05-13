@@ -6,6 +6,12 @@
     "axios": "^1.9.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "scripts": {
+    "migrate:supabase-to-neon": "node scripts/migrate-supabase-to-neon.mjs",
+    "import:ajw-backup-to-neon": "node scripts/import-ajw-backup-to-neon.mjs",
+    "start": "node shopee-chat-backend/src/server.js"
   }
 }
