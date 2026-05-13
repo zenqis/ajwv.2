@@ -11477,6 +11477,16 @@ function _clickupFindBestIncomeList(){
   var cfg=getCfg()||{}, lists=cfg.clickupDetectedLists||[];
   return (lists||[]).filter(function(l){return _clickupIncomeListIsValid(l&&l.id);})[0]||null;
 }
+function _clickupAssetListIsValid(id){
+  var l=_clickupFindDetectedList(id);
+  if(!l) return true;
+  var t=_clickupListText(l);
+  return t.indexOf('aset')>=0||t.indexOf('asset')>=0||t.indexOf('finance')>=0;
+}
+function _clickupFindBestAssetList(){
+  var cfg=getCfg()||{}, lists=cfg.clickupDetectedLists||[];
+  return (lists||[]).filter(function(l){return _clickupAssetListIsValid(l&&l.id);})[0]||null;
+}
 function _clickupPayrollListIsValid(id){
   var l=_clickupFindDetectedList(id);
   if(!l) return true;
@@ -12771,6 +12781,191 @@ function _clickupExpenseRebuild(){
   toast('Repair Pengeluaran masuk antrean','info');
   if(typeof _renderTools==='function') _renderTools('clickup');
 }
+function _clickupAssetCfg(){
+  var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{};
+  var listRaw=String(cfg.clickupAssetListId||((maps.finance_asset||{}).id)||'').trim();
+  var listId=_clickupNormalizeListId(listRaw);
+  if(listId&&!_clickupAssetListIsValid(listId)){
+    var best=_clickupFindBestAssetList();
+    if(best&&best.id){
+      listId=_clickupNormalizeListId(best.id);
+      listRaw=listId;
+      cfg.clickupAssetListId=listId;
+      cfg.clickupListMappings=cfg.clickupListMappings||{};
+      cfg.clickupListMappings.finance_asset={key:'finance_asset',id:listId,updatedAt:isoNow()};
+      saveCfg(cfg);
+      _clickupLog('warn','List Aset diperbaiki otomatis','Mapping lama bukan list Aset. Dipindah ke '+(best.name||'Aset')+' / '+listId+'.');
+    }else{
+      listId='';
+      _clickupLog('error','List Aset salah','Mapping sekarang bukan list Aset. Klik Auto Detect lalu pilih list Aset.');
+    }
+  }
+  return {enabled:!!cfg.clickupSupplierEnabled,token:String(cfg.clickupToken||'').trim(),listId:listId,listRaw:listRaw,fields:cfg.clickupAssetFields||{},statusDone:String(cfg.clickupAssetStatusDone||'COMPLETED').trim()};
+}
+function _clickupAssetReady(){ var c=_clickupAssetCfg(); return !!(c.enabled&&c.token&&c.listId); }
+function _clickupAssetFieldAliases(){
+  return {tanggal:['tanggal'],jenisAset:['jenis aset','jenis','type'],periode:['periode'],tahun:['tahun'],nilai:['nilai','nilai saldo','saldo','nominal'],kategori:['kategori'],catatan:['catatan','keterangan'],ajwId:[]};
+}
+function _clickupAssetFieldMetaLoad(){ try{return JSON.parse(localStorage.getItem('ajw_clickup_asset_field_meta')||'{}')||{};}catch(e){return {};} }
+function _clickupAssetFieldMetaSave(meta){ try{localStorage.setItem('ajw_clickup_asset_field_meta',JSON.stringify(meta||{}));}catch(e){} }
+function _clickupAssetFieldsByKey(){
+  var manual=_clickupAssetCfg().fields||{}, meta=_clickupAssetFieldMetaLoad(), out={};
+  Object.keys(manual).forEach(function(k){ if(manual[k]) out[k]=meta[manual[k]]||{id:manual[k],name:k,type:'text',type_config:{}}; });
+  return out;
+}
+function _clickupAssetAutoMapFields(fields){
+  var aliases=_clickupAssetFieldAliases(), mapped={}, meta={};
+  (fields||[]).forEach(function(f){ if(f&&f.id) meta[f.id]={id:f.id,name:f.name||'',type:f.type||'',type_config:f.type_config||{}}; });
+  Object.keys(aliases).forEach(function(key){
+    var hit=null;
+    (aliases[key]||[]).some(function(alias){
+      var want=_clickupNormName(alias);
+      hit=(fields||[]).filter(function(f){
+        var type=String((f&&f.type)||'').toLowerCase();
+        if(type==='tasks'||type==='relationship'||type==='dependency'||type==='users') return false;
+        return _clickupNormName(f&&f.name)===want;
+      })[0];
+      return !!hit;
+    });
+    if(hit) mapped[key]=hit.id;
+  });
+  _clickupAssetFieldMetaSave(meta);
+  var cfg=getCfg()||{};
+  cfg.clickupDetectedAssetFields=(fields||[]).map(function(f){return {id:f.id,name:f.name||'',type:f.type||''};});
+  saveCfg(cfg);
+  return mapped;
+}
+function _clickupAssetLoadFieldMap(){
+  var c=_clickupAssetCfg();
+  if(!c.token||!c.listId) return Promise.resolve({});
+  return _clickupSupplierRequest('/list/'+encodeURIComponent(c.listId)+'/field','GET').catch(function(err){
+    var fb=_clickupListIdFallback(c.listId);
+    if(!fb||fb===c.listId) throw err;
+    return _clickupSupplierRequest('/list/'+encodeURIComponent(fb)+'/field','GET');
+  }).then(function(data){
+    var fields=data.fields||[], mapped=_clickupAssetAutoMapFields(fields), cfg=getCfg()||{};
+    var next=Object.assign({},cfg.clickupAssetFields||{});
+    Object.keys(_clickupAssetFieldAliases()).forEach(function(k){ delete next[k]; });
+    cfg.clickupAssetFields=Object.assign(next,mapped);
+    saveCfg(cfg);
+    _clickupAssetLogMissingFields(fields,mapped);
+    return mapped;
+  });
+}
+function _clickupAssetLogMissingFields(fields,mapped){
+  var names=(fields||[]).map(function(f){return _clickupNormName(f&&f.name);}), aliases=_clickupAssetFieldAliases();
+  var required=['tanggal','jenisAset','periode','tahun','nilai'];
+  var missing=required.filter(function(k){ if(mapped&&mapped[k]) return false; return !(aliases[k]||[]).some(function(a){return names.indexOf(_clickupNormName(a))>=0;}); });
+  var cfg=getCfg()||{}, listId=(_clickupAssetCfg()||{}).listId||'', lists=cfg.clickupDetectedLists||[];
+  var list=(lists||[]).filter(function(l){return String(l.id)===String(listId);})[0]||{};
+  var listLabel=(list.name?list.name+' / ':'')+listId;
+  if(missing.length) _clickupLog('warn','Custom field Aset kurang',missing.join(', ')+' | List: '+(listLabel||'-')+' | Field terbaca: '+((fields||[]).map(function(f){return f.name||'-';}).join(', ')||'-'));
+  else _clickupLog('success','Custom field Aset lengkap','List: '+(listLabel||'-')+' | Field aset terdeteksi.');
+}
+function _clickupAssetKnownLoad(){ try{return JSON.parse(localStorage.getItem('ajw_clickup_asset_known')||'{}')||{};}catch(e){return {};} }
+function _clickupAssetKnownSave(map){ try{localStorage.setItem('ajw_clickup_asset_known',JSON.stringify(map||{}));}catch(e){} }
+function _clickupAssetQueueLoad(){ try{return JSON.parse(localStorage.getItem('ajw_clickup_asset_queue')||'[]')||[];}catch(e){return [];} }
+function _clickupAssetQueueSave(q){ try{localStorage.setItem('ajw_clickup_asset_queue',JSON.stringify(q||[]));}catch(e){} }
+function _clickupAssetQueueItem(id,action,taskId){
+  if(!id) return;
+  var q=_clickupAssetQueueLoad(), key=String(id), found=false;
+  q=q.filter(function(it){ if(String(it.id)===key){ found=true; it.action=action||it.action||'upsert'; if(taskId) it.taskId=taskId; it.queuedAt=isoNow(); return true; } return true; });
+  if(!found) q.push({id:key,action:action||'upsert',taskId:taskId||'',tries:0,queuedAt:isoNow(),lastError:''});
+  _clickupAssetQueueSave(q);
+}
+function _clickupAssetSchedule(){ if(window._clickupAssetTimer) clearTimeout(window._clickupAssetTimer); window._clickupAssetTimer=setTimeout(_clickupAssetProcess,15000); }
+function _clickupAssetQueueChanged(){
+  if(!_clickupAssetReady()) return;
+  var known=_clickupAssetKnownLoad(), current={};
+  (_finAssets||[]).forEach(function(r,idx){
+    if(!r.id) r.id='asset_'+Date.now()+'_'+idx;
+    current[String(r.id)]=true;
+    _clickupAssetQueueItem(r.id,'upsert',r.clickupAssetTaskId||known[String(r.id)]||'');
+  });
+  Object.keys(known).forEach(function(id){ if(!current[id]&&known[id]) _clickupAssetQueueItem(id,'archive',known[id]); });
+  _clickupAssetSchedule();
+}
+function _clickupAssetPeriod(row){
+  var d=String(row&&row.tanggal||''), m=d.match(/^(\d{4})-(\d{2})-/);
+  var names=['','January','February','March','April','May','June','July','August','September','October','November','December'];
+  return names[m?parseInt(m[2],10):0]||'';
+}
+function _clickupAssetYear(row){ var m=String(row&&row.tanggal||'').match(/^(\d{4})-/); return m?m[1]:String(new Date().getFullYear()); }
+function _clickupAssetTaskName(row){ return String(row&&row.nama||row&&row.name||row&&row.kategori||'Aset'); }
+function _clickupAssetMarkdown(row){
+  return ['## Aset AJW','','| Field | Data |','|---|---|','| Nama Aset | '+_clickupAssetTaskName(row)+' |','| Tanggal | '+(row.tanggal||'-')+' |','| Jenis Aset | '+(row.type||row.jenis||'-')+' |','| Periode | '+_clickupAssetPeriod(row)+' |','| Tahun | '+_clickupAssetYear(row)+' |','| Nilai | Rp '+fmt(_num(row.nominal))+' |','| Kategori | '+(row.kategori||'-')+' |','| Catatan | '+(row.catatan||row.note||'-')+' |'].join('\n');
+}
+function _clickupAssetFieldValue(key, field, value){
+  if(key==='periode'){
+    var type=String((field&&field.type)||'').toLowerCase(), cfg=(field&&field.type_config)||{}, opts=cfg.options||[];
+    if(type==='drop_down'||type==='labels'){
+      var map={january:['january','januari'],february:['february','februari'],march:['march','maret'],april:['april'],may:['may','mei'],june:['june','juni'],july:['july','juli'],august:['august','agustus'],september:['september'],october:['october','oktober'],november:['november'],december:['december','desember']};
+      var want=_clickupNormName(value), wants=[want].concat(map[want]||[]);
+      var hit=(opts||[]).filter(function(o){ return wants.indexOf(_clickupNormName(o&&o.name))>=0; })[0]||null;
+      if(type==='labels') return hit?[hit.id]:[];
+      return hit?hit.id:undefined;
+    }
+  }
+  return _clickupSupplierFieldValue(field,value);
+}
+function _clickupAssetCustomFields(row){
+  var fields=_clickupAssetFieldsByKey();
+  var map={tanggal:row.tanggal||'',jenisAset:row.type||row.jenis||'',periode:_clickupAssetPeriod(row),tahun:_clickupAssetYear(row),nilai:_num(row.nominal),kategori:row.kategori||'',catatan:row.catatan||row.note||'',ajwId:String(row.id||'')};
+  var out=[];
+  Object.keys(map).forEach(function(k){ if(fields[k]){ var val=_clickupAssetFieldValue(k,fields[k],map[k]); if(val!==undefined&&val!==null) out.push({id:fields[k].id,value:val,key:k}); } });
+  return out;
+}
+function _clickupAssetPayload(row,includeCustom){
+  var c=_clickupAssetCfg(), payload={name:_clickupAssetTaskName(row),markdown_content:_clickupAssetMarkdown(row),tags:['ajw','aset'],notify_all:false};
+  if(c.statusDone) payload.status=c.statusDone;
+  var cf=includeCustom?_clickupAssetCustomFields(row):[];
+  if(cf.length) payload.custom_fields=cf;
+  return payload;
+}
+function _clickupAssetApplyLocal(id,patch){
+  var key=String(id);
+  (_finAssets||[]).forEach(function(r){ if(String(r.id)===key) Object.keys(patch||{}).forEach(function(k){r[k]=patch[k];}); });
+  try{localStorage.setItem('ajw_fin_assets',JSON.stringify(_finAssets||[]));}catch(e){}
+}
+function _clickupAssetUpsert(row,taskId){
+  var c=_clickupAssetCfg();
+  return _clickupAssetLoadFieldMap().catch(function(){}).then(function(){
+    if(taskId){
+      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupAssetPayload(row,false)).then(function(res){
+        return _clickupSetCustomFields(taskId,_clickupAssetCustomFields(row),'aset').then(function(){return res;});
+      }).catch(function(err){
+        if(!_clickupIsMissingTaskError(err)) throw err;
+        var known=_clickupAssetKnownLoad(); delete known[String(row.id)]; _clickupAssetKnownSave(known);
+        _clickupLog('warn','Task Aset ClickUp hilang, dibuat ulang',_clickupAssetTaskName(row));
+        row.clickupAssetTaskId=''; _clickupAssetApplyLocal(row.id,row);
+        return _clickupAssetUpsert(row,'');
+      });
+    }
+    return _clickupCreateTaskInList(c.listId,_clickupAssetPayload(row,true)).then(function(res){
+      var tid=(res&&res.id)||'';
+      if(!tid) return res;
+      return _clickupSetCustomFields(tid,_clickupAssetCustomFields(row),'aset').then(function(){return res;});
+    });
+  });
+}
+function _clickupAssetProcess(){
+  if(!_clickupAssetReady()||window._clickupAssetBusy) return;
+  var q=_clickupAssetQueueLoad(); if(!q.length) return;
+  window._clickupAssetBusy=true;
+  var item=q.shift(), known=_clickupAssetKnownLoad(), row=(_finAssets||[]).filter(function(r){return String(r.id)===String(item.id);})[0];
+  var taskId=item.taskId||known[String(item.id)]||(row&&row.clickupAssetTaskId)||'', work;
+  if(item.action==='archive') work=taskId?_clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',{archived:true}):Promise.resolve({});
+  else if(row) work=_clickupAssetUpsert(row,taskId).then(function(res){ var tid=(res&&res.id)||taskId; if(tid){ known[String(row.id)]=tid; _clickupAssetKnownSave(known); _clickupAssetApplyLocal(row.id,{clickupAssetTaskId:tid,clickupSyncStatus:'synced',clickupSyncAt:isoNow(),clickupSyncError:''}); } return res; });
+  else work=Promise.resolve({});
+  work.then(function(){ if(item.action==='archive'&&known[String(item.id)]){ delete known[String(item.id)]; _clickupAssetKnownSave(known); } }).catch(function(e){
+    item.tries=(item.tries||0)+1; item.lastError=(e&&e.message)||String(e); item.lastTryAt=isoNow(); _clickupLog('error','Sync aset gagal',item.lastError); if(row) _clickupAssetApplyLocal(row.id,{clickupSyncStatus:'failed',clickupSyncError:item.lastError}); if(item.tries<3) q.push(item);
+  }).finally(function(){ window._clickupAssetBusy=false; _clickupAssetQueueSave(q); if(q.length) _clickupAssetSchedule(); if(typeof _clickupToolsRenderSoon==='function') _clickupToolsRenderSoon(5000); });
+}
+function _clickupAssetSyncNow(){
+  if(!_clickupAssetReady()){ toast('Isi Token dan List ID Aset dulu','warn'); return; }
+  if(!((typeof _finAssets!=='undefined'&&_finAssets)||[]).length) _clickupLog('warn','Tidak ada data aset','Data AJW kosong.');
+  _clickupAssetQueueChanged(); _clickupAssetProcess(); _clickupLog('info','Sync Aset dimulai','AJW mengirim/update tab Finance > Aset ke ClickUp.'); toast('Sync Aset masuk antrean','info');
+}
 function _clickupIncomeCfg(){
   var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{};
   var listRaw=String(cfg.clickupIncomeListId||((maps.finance_income||{}).id)||'').trim();
@@ -13502,10 +13697,12 @@ function _clickupToolsSaveCfg(){
   cfg.clickupExpenseListId=val('CUT-LIST-EXPENSE')||cfg.clickupExpenseListId||'';
   cfg.clickupIncomeListId=val('CUT-LIST-INCOME')||cfg.clickupIncomeListId||'';
   cfg.clickupPayrollListId=val('CUT-LIST-PAYROLL')||cfg.clickupPayrollListId||'';
+  cfg.clickupAssetListId=val('CUT-LIST-ASSET')||cfg.clickupAssetListId||'';
   cfg.clickupSupplierListId=_clickupNormalizeListId(cfg.clickupSupplierListId);
   cfg.clickupExpenseListId=_clickupNormalizeListId(cfg.clickupExpenseListId);
   cfg.clickupIncomeListId=_clickupNormalizeListId(cfg.clickupIncomeListId);
   cfg.clickupPayrollListId=_clickupNormalizeListId(cfg.clickupPayrollListId);
+  cfg.clickupAssetListId=_clickupNormalizeListId(cfg.clickupAssetListId);
   if(cfg.clickupSupplierListId&&!_clickupSupplierListIsValid(cfg.clickupSupplierListId)){
     var bestSup=_clickupFindBestSupplierList();
     if(bestSup&&bestSup.id){
@@ -13546,11 +13743,22 @@ function _clickupToolsSaveCfg(){
       cfg.clickupPayrollListId='';
     }
   }
+  if(cfg.clickupAssetListId&&!_clickupAssetListIsValid(cfg.clickupAssetListId)){
+    var bestAst=_clickupFindBestAssetList();
+    if(bestAst&&bestAst.id){
+      cfg.clickupAssetListId=_clickupNormalizeListId(bestAst.id);
+      _clickupLog('warn','List Aset diganti otomatis','Input lama bukan list Aset. Dipakai '+(bestAst.name||'Aset')+' / '+cfg.clickupAssetListId+'.');
+    }else{
+      _clickupLog('error','List Aset ditolak','List yang dipilih bukan Aset. Klik Auto Detect lalu pilih tombol Aset.');
+      cfg.clickupAssetListId='';
+    }
+  }
   cfg.clickupListMappings=cfg.clickupListMappings||{};
   if(cfg.clickupSupplierListId) cfg.clickupListMappings.hutang_supplier={key:'hutang_supplier',id:cfg.clickupSupplierListId,updatedAt:isoNow()};
   if(cfg.clickupExpenseListId) cfg.clickupListMappings.finance_expense={key:'finance_expense',id:cfg.clickupExpenseListId,updatedAt:isoNow()};
   if(cfg.clickupIncomeListId) cfg.clickupListMappings.finance_income={key:'finance_income',id:cfg.clickupIncomeListId,updatedAt:isoNow()};
   if(cfg.clickupPayrollListId) cfg.clickupListMappings.hr_payroll={key:'hr_payroll',id:cfg.clickupPayrollListId,updatedAt:isoNow()};
+  if(cfg.clickupAssetListId) cfg.clickupListMappings.finance_asset={key:'finance_asset',id:cfg.clickupAssetListId,updatedAt:isoNow()};
   cfg.clickupSupplierStatusOpen=val('CUT-ST-OPEN')||'HUTANG';
   cfg.clickupSupplierStatusPartial=val('CUT-ST-PART')||'CICIL';
   cfg.clickupSupplierStatusPaid=val('CUT-ST-PAID')||'LUNAS';
@@ -13684,13 +13892,15 @@ function _clickupToolsSyncNow(){
   cfg.clickupExpenseListId=_clickupNormalizeListId(cfg.clickupExpenseListId);
   cfg.clickupIncomeListId=_clickupNormalizeListId(cfg.clickupIncomeListId);
   cfg.clickupPayrollListId=_clickupNormalizeListId(cfg.clickupPayrollListId);
-  if(!cfg.clickupToken||(!cfg.clickupSupplierListId&&!cfg.clickupExpenseListId&&!cfg.clickupIncomeListId&&!cfg.clickupPayrollListId)){ toast('Isi Token dan minimal 1 List ID dulu','warn'); return; }
+  cfg.clickupAssetListId=_clickupNormalizeListId(cfg.clickupAssetListId);
+  if(!cfg.clickupToken||(!cfg.clickupSupplierListId&&!cfg.clickupExpenseListId&&!cfg.clickupIncomeListId&&!cfg.clickupPayrollListId&&!cfg.clickupAssetListId)){ toast('Isi Token dan minimal 1 List ID dulu','warn'); return; }
   cfg.clickupSupplierEnabled=true; saveCfg(cfg);
   if(cfg.clickupSupplierListId) _clickupSupplierSyncNow();
   if(cfg.clickupExpenseListId) _clickupExpenseSyncNow();
   if(cfg.clickupIncomeListId) _clickupIncomeSyncNow();
   if(cfg.clickupPayrollListId) _clickupPayrollSyncNow();
-  _clickupLog('info','Sync ClickUp dimulai','AJW mengirim/update hutang supplier, pengeluaran, pendapatan, dan payroll sesuai mapping aktif.');
+  if(cfg.clickupAssetListId) _clickupAssetSyncNow();
+  _clickupLog('info','Sync ClickUp dimulai','AJW mengirim/update hutang supplier, pengeluaran, pendapatan, payroll, dan aset sesuai mapping aktif.');
   if(typeof _clickupToolsRenderSoon==='function') _clickupToolsRenderSoon(5000);
 }
 function _clickupToolsSelectList(id){
@@ -13710,6 +13920,11 @@ function _clickupToolsSelectIncomeList(id){
 }
 function _clickupToolsSelectPayrollList(id){
   var el=document.getElementById('CUT-LIST-PAYROLL');
+  if(el) el.value=id||'';
+  _clickupToolsSaveCfg();
+}
+function _clickupToolsSelectAssetList(id){
+  var el=document.getElementById('CUT-LIST-ASSET');
   if(el) el.value=id||'';
   _clickupToolsSaveCfg();
 }
@@ -13746,6 +13961,7 @@ function _clickupToolsAssignList(key,id){
   if(key==='finance_expense') cfg.clickupExpenseListId=id||cfg.clickupExpenseListId||'';
   if(key==='finance_income') cfg.clickupIncomeListId=id||cfg.clickupIncomeListId||'';
   if(key==='hr_payroll') cfg.clickupPayrollListId=id||cfg.clickupPayrollListId||'';
+  if(key==='finance_asset') cfg.clickupAssetListId=id||cfg.clickupAssetListId||'';
   saveCfg(cfg);
   _clickupLog('success','List mapping disimpan',key+' → '+id);
   if(typeof _renderTools==='function') _renderTools('clickup');
@@ -13790,6 +14006,10 @@ function _clickupToolsRepairCustomFieldValues(){
       _clickupPayrollQueueChanged();
       if(typeof _clickupPayrollProcess==='function') _clickupPayrollProcess();
     }
+    if((cfg.clickupAssetListId||((maps.finance_asset||{}).id))&&typeof _clickupAssetQueueChanged==='function'&&typeof _finAssets!=='undefined'){
+      _clickupAssetQueueChanged();
+      if(typeof _clickupAssetProcess==='function') _clickupAssetProcess();
+    }
     _clickupLog('info','Repair ClickUp berjalan','AJW mengisi ulang custom field yang kosong/terhapus di ClickUp dari data website.');
   }catch(e){
     try{ _clickupLog('error','Repair ClickUp gagal',(e&&e.message)||String(e)); }catch(ex){}
@@ -13809,7 +14029,7 @@ setTimeout(function(){
   }catch(e){}
 },3500);
 function _clickupToolsCaptureDraft(){
-  var ids=['CUT-TOKEN','CUT-PROXY','CUT-LIST-HUTANG','CUT-LIST-EXPENSE','CUT-LIST-INCOME','CUT-LIST-PAYROLL','CUT-CLIENT-ID','CUT-CLIENT-SECRET','CUT-REDIRECT','CUT-CODE','CUT-TEAM','CUT-SPACE','CUT-FOLDER','CUT-ST-OPEN','CUT-ST-PART','CUT-ST-PAID','CUT-INCOME-DONE','CUT-PAYROLL-DONE','CUT-MAP-NAME','CUT-MAP-ID'];
+  var ids=['CUT-TOKEN','CUT-PROXY','CUT-LIST-HUTANG','CUT-LIST-EXPENSE','CUT-LIST-INCOME','CUT-LIST-PAYROLL','CUT-LIST-ASSET','CUT-CLIENT-ID','CUT-CLIENT-SECRET','CUT-REDIRECT','CUT-CODE','CUT-TEAM','CUT-SPACE','CUT-FOLDER','CUT-ST-OPEN','CUT-ST-PART','CUT-ST-PAID','CUT-INCOME-DONE','CUT-PAYROLL-DONE','CUT-MAP-NAME','CUT-MAP-ID'];
   var draft={};
   ids.forEach(function(id){ var el=document.getElementById(id); if(el) draft[id]=el.value||''; });
   var en=document.getElementById('CUT-EN');
@@ -13896,8 +14116,8 @@ function _clickupToolsSetView(v){
 function _renderToolsClickupIntegration(){
   _clickupToolsCaptureDraft();
   var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{}, logs=_clickupLogLoad();
-  var q=_clickupSupplierQueueLoad(), qe=_clickupExpenseQueueLoad(), qi=_clickupIncomeQueueLoad(), qp=_clickupPayrollQueueLoad();
-  var lists=cfg.clickupDetectedLists||[], fields=cfg.clickupDetectedFields||[], expenseFields=cfg.clickupDetectedExpenseFields||[], incomeFields=cfg.clickupDetectedIncomeFields||[], payrollFields=cfg.clickupDetectedPayrollFields||[];
+  var q=_clickupSupplierQueueLoad(), qe=_clickupExpenseQueueLoad(), qi=_clickupIncomeQueueLoad(), qp=_clickupPayrollQueueLoad(), qa=_clickupAssetQueueLoad();
+  var lists=cfg.clickupDetectedLists||[], fields=cfg.clickupDetectedFields||[], expenseFields=cfg.clickupDetectedExpenseFields||[], incomeFields=cfg.clickupDetectedIncomeFields||[], payrollFields=cfg.clickupDetectedPayrollFields||[], assetFields=cfg.clickupDetectedAssetFields||[];
   var synced=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
   var failed=(supplierHutang||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
   var expSynced=((typeof _finExpense!=='undefined'&&_finExpense)||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
@@ -13905,12 +14125,14 @@ function _renderToolsClickupIntegration(){
   var incRows=typeof _clickupIncomeRows==='function'?_clickupIncomeRows():[];
   var paySynced=(payHistory||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
   var payFailed=(payHistory||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
-  var queueTotal=q.length+qe.length+qi.length+qp.length, failTotal=failed+expFailed+payFailed;
-  var dataTotal=(supplierHutang||[]).length+((typeof _finExpense!=='undefined'&&_finExpense)||[]).length+incRows.length+(payHistory||[]).length;
+  var astSynced=((typeof _finAssets!=='undefined'&&_finAssets)||[]).filter(function(d){return d.clickupSyncStatus==='synced';}).length;
+  var astFailed=((typeof _finAssets!=='undefined'&&_finAssets)||[]).filter(function(d){return d.clickupSyncStatus==='failed';}).length;
+  var queueTotal=q.length+qe.length+qi.length+qp.length+qa.length, failTotal=failed+expFailed+payFailed+astFailed;
+  var dataTotal=(supplierHutang||[]).length+((typeof _finExpense!=='undefined'&&_finExpense)||[]).length+incRows.length+(payHistory||[]).length+((typeof _finAssets!=='undefined'&&_finAssets)||[]).length;
   var doneTotal=Math.max(0,dataTotal-queueTotal-failTotal);
   var progress=dataTotal?Math.max(0,Math.min(100,Math.round(doneTotal/dataTotal*100))):(queueTotal?15:100);
-  var fieldTotal=fields.length+expenseFields.length+incomeFields.length+payrollFields.length;
-  var mappedCore=(cfg.clickupSupplierListId?1:0)+(cfg.clickupExpenseListId?1:0)+(cfg.clickupIncomeListId?1:0)+(cfg.clickupPayrollListId?1:0);
+  var fieldTotal=fields.length+expenseFields.length+incomeFields.length+payrollFields.length+assetFields.length;
+  var mappedCore=(cfg.clickupSupplierListId?1:0)+(cfg.clickupExpenseListId?1:0)+(cfg.clickupIncomeListId?1:0)+(cfg.clickupPayrollListId?1:0)+(cfg.clickupAssetListId?1:0);
   var lastLog=logs[0]||{}, lastLabel=lastLog.ts?new Date(lastLog.ts).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'Belum ada';
   var nowLabel=new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
   var view=window._clickupToolsView||(function(){try{return localStorage.getItem('ajw_clickup_view')||'dash';}catch(e){return 'dash';}})();
@@ -13924,20 +14146,20 @@ function _renderToolsClickupIntegration(){
   function kpi(label,value,sub,color){return '<div class="card" style="margin:0;padding:9px 11px;border-top:3px solid '+color+';min-height:72px"><div style="font-size:9px;font-weight:900;color:var(--tx2);text-transform:uppercase">'+label+'</div><div style="font-size:16px;font-weight:900;color:var(--tx);margin-top:4px">'+value+'</div><div style="font-size:10px;color:var(--tx2);margin-top:1px">'+sub+'</div></div>';}
   function box(title,sub,body,right){return '<div class="card" style="margin:0;padding:14px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:11px"><div><div style="font-size:14px;font-weight:900;color:var(--tx)">'+title+'</div><div style="font-size:11px;color:var(--tx2);margin-top:3px">'+sub+'</div></div>'+(right||'')+'</div>'+body+'</div>';}
   function details(id,title,meta,body){var open=false;try{open=localStorage.getItem('ajw_clickup_panel_'+id)==='1';}catch(e){} return '<details '+(open?'open ':'')+'style="border:1px solid var(--bd);border-radius:8px;background:var(--bg2);overflow:hidden" ontoggle="try{localStorage.setItem(\'ajw_clickup_panel_'+id+'\',this.open?\'1\':\'0\')}catch(e){}"><summary style="cursor:pointer;padding:10px 12px;list-style:none"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:12px;color:var(--tx)">'+title+'</b><span style="font-size:10px;color:var(--tx2)">'+meta+'</span></div></summary><div style="padding:0 12px 12px" onclick="event.stopPropagation()">'+body+'</div></details>';}
-  var setupApi='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--tx)"><input id="CUT-AUTO-REPAIR" type="checkbox" '+(ck('CUT-AUTO-REPAIR',cfg.clickupAutoRepair)?'checked':'')+'> Auto repair tiap 30 menit</label><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cv('CUT-LIST-HUTANG',cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||''))+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cv('CUT-LIST-EXPENSE',cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||''))+'" placeholder="Tempel URL list Pengeluaran atau ID"></div><div><label class="lbl">List Pendapatan URL / ID</label><input id="CUT-LIST-INCOME" class="fi" value="'+escAttr(cv('CUT-LIST-INCOME',cfg.clickupIncomeListId||((maps.finance_income||{}).id)||''))+'" placeholder="Tempel URL list Pendapatan atau ID"></div><div><label class="lbl">List Payroll URL / ID</label><input id="CUT-LIST-PAYROLL" class="fi" value="'+escAttr(cv('CUT-LIST-PAYROLL',cfg.clickupPayrollListId||((maps.hr_payroll||{}).id)||''))+'" placeholder="Tempel URL list Payroll atau ID"></div></div>';
+  var setupApi='<div style="display:grid;gap:9px"><div><label class="lbl">Access Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="OAuth access token"></div><div><label class="lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--tx)"><input id="CUT-AUTO-REPAIR" type="checkbox" '+(ck('CUT-AUTO-REPAIR',cfg.clickupAutoRepair)?'checked':'')+'> Auto repair tiap 30 menit</label><div><label class="lbl">List Hutang Supplier URL / ID</label><input id="CUT-LIST-HUTANG" class="fi" value="'+escAttr(cv('CUT-LIST-HUTANG',cfg.clickupSupplierListId||((maps.hutang_supplier||{}).id)||''))+'" placeholder="Tempel URL list atau ID list"></div><div><label class="lbl">List Pengeluaran URL / ID</label><input id="CUT-LIST-EXPENSE" class="fi" value="'+escAttr(cv('CUT-LIST-EXPENSE',cfg.clickupExpenseListId||((maps.finance_expense||{}).id)||''))+'" placeholder="Tempel URL list Pengeluaran atau ID"></div><div><label class="lbl">List Pendapatan URL / ID</label><input id="CUT-LIST-INCOME" class="fi" value="'+escAttr(cv('CUT-LIST-INCOME',cfg.clickupIncomeListId||((maps.finance_income||{}).id)||''))+'" placeholder="Tempel URL list Pendapatan atau ID"></div><div><label class="lbl">List Payroll URL / ID</label><input id="CUT-LIST-PAYROLL" class="fi" value="'+escAttr(cv('CUT-LIST-PAYROLL',cfg.clickupPayrollListId||((maps.hr_payroll||{}).id)||''))+'" placeholder="Tempel URL list Payroll atau ID"></div><div><label class="lbl">List Aset URL / ID</label><input id="CUT-LIST-ASSET" class="fi" value="'+escAttr(cv('CUT-LIST-ASSET',cfg.clickupAssetListId||((maps.finance_asset||{}).id)||''))+'" placeholder="Tempel URL list Aset atau ID"></div></div>';
   var oauth='<div style="display:grid;gap:9px"><div class="g2"><div><label class="lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cv('CUT-CLIENT-ID',cfg.clickupClientId||''))+'"></div><div><label class="lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cv('CUT-CLIENT-SECRET',cfg.clickupClientSecret||''))+'"></div></div><div><label class="lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cv('CUT-REDIRECT',cfg.clickupRedirectUri||location.href.split('#')[0]))+'"></div><div><label class="lbl">OAuth Code</label><input id="CUT-CODE" class="fi" value="'+escAttr(cv('CUT-CODE',''))+'" placeholder="Tempel code dari URL redirect"></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btnp" onclick="_clickupToolsExchangeCode()">Tukar Code -> Token</button></div></div>';
   var workspace='<div style="display:grid;gap:9px"><div class="g3"><div><label class="lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cv('CUT-TEAM',cfg.clickupTeamId||''))+'"></div><div><label class="lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cv('CUT-SPACE',cfg.clickupSpaceId||''))+'"></div><div><label class="lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cv('CUT-FOLDER',cfg.clickupFolderId||''))+'"></div></div><div class="g3"><div><label class="lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cv('CUT-ST-OPEN',cfg.clickupSupplierStatusOpen||'HUTANG'))+'"></div><div><label class="lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cv('CUT-ST-PART',cfg.clickupSupplierStatusPartial||'CICIL'))+'"></div><div><label class="lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cv('CUT-ST-PAID',cfg.clickupSupplierStatusPaid||'LUNAS'))+'"></div><div><label class="lbl">Status Pendapatan Terupload</label><input id="CUT-INCOME-DONE" class="fi" value="'+escAttr(cv('CUT-INCOME-DONE',cfg.clickupIncomeStatusDone||'DONE'))+'"></div><div><label class="lbl">Status Payroll Terupload</label><input id="CUT-PAYROLL-DONE" class="fi" value="'+escAttr(cv('CUT-PAYROLL-DONE',cfg.clickupPayrollStatusDone||'DONE'))+'"></div></div></div>';
-  var listRows=lists.length?'<div style="overflow:auto"><table class="tbl" style="min-width:420px"><thead><tr><th>Nama List</th><th>ID List</th></tr></thead><tbody>'+lists.slice(0,80).map(function(l){return '<tr><td style="font-weight:800">'+esc(l.name||'-')+'</td><td style="font-family:Consolas,monospace;font-size:11px">'+esc(l.id||'')+'</td></tr>';}).join('')+'</tbody></table></div>':'<div style="color:var(--tx2);font-size:12px">Belum ada list terdeteksi.</div>';
+  var listRows=lists.length?'<div style="display:grid;gap:8px">'+lists.slice(0,80).map(function(l){return '<div style="padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg2)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap"><div><b style="font-size:12px">'+esc(l.name||'-')+'</b><div style="font-size:10px;color:var(--tx2);font-family:Consolas,monospace">'+esc(l.id||'')+'</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><button class="btnsm" onclick="_clickupToolsAssignList(\'hutang_supplier\',\''+escAttr(l.id)+'\')">Hutang</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_expense\',\''+escAttr(l.id)+'\')">Pengeluaran</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_income\',\''+escAttr(l.id)+'\')">Pendapatan</button><button class="btnsm" onclick="_clickupToolsAssignList(\'hr_payroll\',\''+escAttr(l.id)+'\')">Payroll</button><button class="btnsm" onclick="_clickupToolsAssignList(\'finance_asset\',\''+escAttr(l.id)+'\')">Aset</button></div></div></div>';}).join('')+'</div>':'<div style="color:var(--tx2);font-size:12px">Belum ada list terdeteksi.</div>';
   var logCards=logs.slice(0,12).map(function(l){return '<div style="border:1px solid var(--bd);border-radius:8px;background:var(--bg2);padding:9px 10px"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:11px;color:'+lc(l.level)+'">'+ll(l.level)+'</b><span style="font-size:10px;color:var(--tx2)">'+esc(l.ts?new Date(l.ts).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'-')+'</span></div><div style="font-size:12px;font-weight:800;color:var(--tx);margin-top:4px">'+esc(l.title||'-')+'</div><div style="font-size:11px;color:var(--tx2);margin-top:3px;line-height:1.35">'+esc(l.detail||'-')+'</div></div>';}).join('')||'<div style="padding:14px;border:1px dashed var(--bd);border-radius:8px;color:var(--tx2);font-size:12px">Belum ada log.</div>';
   var h='';
   h+='<style>.tools-sub-clickup .clickup-inner-tabbar{display:flex!important;gap:6px!important;flex-wrap:wrap!important;background:#fff!important;border:1px solid #d8dee7!important;border-radius:6px!important;padding:6px!important}.tools-sub-clickup .clickup-inner-tabbar button{appearance:none!important;border:1px solid #d8dee7!important;background:#f8fafc!important;color:#334155!important;border-radius:4px!important;padding:7px 10px!important;font:800 11px Arial,sans-serif!important;line-height:1.1!important;cursor:pointer!important}.tools-sub-clickup .clickup-inner-tabbar button.active{background:#c77818!important;border-color:#c77818!important;color:#fff!important}.tools-sub-clickup .sup-soft-chip{background:#f8fafc!important;border:1px solid #d8dee7!important;border-radius:999px!important;padding:6px 9px!important;color:#334155!important;font-size:11px!important;font-weight:800!important;display:inline-flex!important;gap:6px!important;align-items:center!important}.tools-sub-clickup .btnp,.tools-sub-clickup .btns,.tools-sub-clickup .btnsm{min-height:30px!important}</style>';
   h+='<div style="padding:2px 4px 12px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:18px;font-weight:900;color:var(--tx)">ClickUp Integration</div><div style="font-size:12px;color:var(--tx2);margin-top:4px">Integrasi AJW ke ClickUp dengan monitoring, sync, setup, dan mapping.</div></div><label class="sup-soft-chip"><input id="CUT-EN" type="checkbox" '+(ck('CUT-EN',cfg.clickupSupplierEnabled)?'checked':'')+'> <span>Realtime</span><b>'+(cfg.clickupSupplierEnabled?'Aktif':'Off')+'</b></label></div>';
   h+='<div class="tools-tabbar clickup-inner-tabbar" style="margin-bottom:12px">'+tab('dash','Dashboard Utama')+tab('log','Log Ringkas')+tab('control','Pusat Kontrol')+'</div>';
   if(view==='dash'){
-    h+='<div style="display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin-bottom:12px">'+kpi('Sync Health',progress+'%','Terakhir: '+esc(lastLabel),failTotal?'#B91C1C':(queueTotal?'#D97706':'#166534'))+kpi('Queue',queueTotal,'H '+q.length+' / E '+qe.length+' / I '+qi.length+' / P '+qp.length,'#2563EB')+kpi('Mapping Core',mappedCore+'/4','Hutang, expense, income, payroll','#0F766E')+kpi('Custom Field',fieldTotal,lists.length+' list','#7C3AED')+kpi('Error',failTotal,'Perlu dicek','#B91C1C')+'</div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin-bottom:12px">'+kpi('Sync Health',progress+'%','Terakhir: '+esc(lastLabel),failTotal?'#B91C1C':(queueTotal?'#D97706':'#166534'))+kpi('Queue',queueTotal,'H '+q.length+' / E '+qe.length+' / I '+qi.length+' / P '+qp.length+' / A '+qa.length,'#2563EB')+kpi('Mapping Core',mappedCore+'/5','Hutang, expense, income, payroll, aset','#0F766E')+kpi('Custom Field',fieldTotal,lists.length+' list','#7C3AED')+kpi('Error',failTotal,'Perlu dicek','#B91C1C')+'</div>';
     h+='<div style="display:grid;grid-template-columns:minmax(320px,.85fr) minmax(0,1.15fr);gap:12px">'+
       box('Input & Status Integrasi','Ringkasan koneksi utama dan aksi cepat.',details('api','Koneksi API',cfg.clickupToken?'Token tersimpan':'Token kosong',setupApi)+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><button class="btnp" onclick="_clickupToolsSaveCfg()">Simpan Config</button><button class="btns" onclick="_clickupToolsTest()">Test Token</button><button class="btnp" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupToolsRepairCustomFieldValues()">Repair Field</button></div>')+
-      box('Monitoring Output','Status sinkronisasi dan log terbaru.','<div style="height:8px;background:#E5EAF1;border:1px solid var(--bd);border-radius:999px;overflow:hidden;margin-bottom:11px"><div style="height:100%;width:'+progress+'%;background:'+(failTotal?'#B91C1C':(queueTotal?'#D97706':'#166534'))+'"></div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">'+chip('Hutang',synced)+chip('Expense',expSynced)+chip('Pendapatan',incRows.length)+chip('Payroll',paySynced)+'</div><div style="display:grid;gap:7px;max-height:310px;overflow:auto">'+logCards+'</div>')+
+      box('Monitoring Output','Status sinkronisasi dan log terbaru.','<div style="height:8px;background:#E5EAF1;border:1px solid var(--bd);border-radius:999px;overflow:hidden;margin-bottom:11px"><div style="height:100%;width:'+progress+'%;background:'+(failTotal?'#B91C1C':(queueTotal?'#D97706':'#166534'))+'"></div></div><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px">'+chip('Hutang',synced)+chip('Expense',expSynced)+chip('Pendapatan',incRows.length)+chip('Payroll',paySynced)+chip('Aset',astSynced)+'</div><div style="display:grid;gap:7px;max-height:310px;overflow:auto">'+logCards+'</div>')+
       '</div>';
   }else if(view==='log'){
     h+='<div style="display:grid;grid-template-columns:minmax(320px,.55fr) minmax(0,1.45fr);gap:12px">'+
@@ -13947,7 +14169,7 @@ function _renderToolsClickupIntegration(){
   }else{
     h+='<div style="display:grid;grid-template-columns:minmax(330px,.72fr) minmax(0,1.28fr);gap:12px">'+
       box('Input Pusat Kontrol','Konfigurasi dan form utama. Tidak mengubah sistem sync.',details('api','Koneksi API',cfg.clickupToken?'Token tersimpan':'Token kosong',setupApi)+details('oauth','OAuth App','Authorize token',oauth)+details('workspace','Workspace & Status','Team/Space/Folder',workspace))+
-      box('Output & Mapping','Aksi sync dan list terdeteksi. Mapping aktif disimpan dari field List ID di panel konfigurasi.','<div style="display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px;margin-bottom:11px"><button class="btnp" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupSupplierSyncNow()">Sync Hutang</button><button class="btns" onclick="_clickupExpenseSyncNow()">Sync Pengeluaran</button><button class="btns" onclick="_clickupIncomeSyncNow()">Sync Pendapatan</button><button class="btns" onclick="_clickupPayrollSyncNow()">Sync Payroll</button><button class="btns" onclick="_clickupToolsAutoDetectAll()">Auto Detect</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Mapping Field</button></div>'+details('detected','List Terdeteksi',lists.length+' list', '<div style="max-height:330px;overflow:auto;display:grid;gap:8px">'+listRows+'</div>'))+
+      box('Output & Mapping','Aksi sync dan list terdeteksi. Mapping aktif disimpan dari field List ID di panel konfigurasi.','<div style="display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px;margin-bottom:11px"><button class="btnp" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btns" onclick="_clickupSupplierSyncNow()">Sync Hutang</button><button class="btns" onclick="_clickupExpenseSyncNow()">Sync Pengeluaran</button><button class="btns" onclick="_clickupIncomeSyncNow()">Sync Pendapatan</button><button class="btns" onclick="_clickupPayrollSyncNow()">Sync Payroll</button><button class="btns" onclick="_clickupAssetSyncNow()">Sync Aset</button><button class="btns" onclick="_clickupToolsAutoDetectAll()">Auto Detect</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Mapping Field</button></div>'+details('detected','List Terdeteksi',lists.length+' list', '<div style="max-height:330px;overflow:auto;display:grid;gap:8px">'+listRows+'</div>'))+
       '</div>';
   }
   return h+'</div>';
@@ -17803,6 +18025,7 @@ function _saveFin(){
   _queueCloudPersist('finance');
   if(typeof _clickupExpenseQueueChanged==='function') _clickupExpenseQueueChanged();
   if(typeof _clickupIncomeQueueChanged==='function') _clickupIncomeQueueChanged();
+  if(typeof _clickupAssetQueueChanged==='function') _clickupAssetQueueChanged();
 }
 function _saveHRSops(){
   sv('ajw_hr_sops', _hrSops||[]);
