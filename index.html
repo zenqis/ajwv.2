@@ -13124,30 +13124,32 @@ function _clickupIncomeFieldValue(key, field, value){
   if(key==='marketplace'){
     var type=String((field&&field.type)||'').toLowerCase();
     var opts=_clickupIncomeOptionList(field);
-    if(type==='drop_down'||type==='labels'){
-      var want=_clickupNormName(value), compact=want.replace(/\s+/g,'');
-      var alias={
-        shopee:['shopee'],
-        lazada:['lazada','laz'],
-        tiktok:['tiktok','tik tok','tik','tiktokshop'],
-        tokopedia:['tokopedia','toped'],
-        tanpamarketplace:['tanpa marketplace','tanpa','manual','none','lainnya','lain','other']
-      };
-      var canonKey=compact;
-      if(alias[canonKey]) canonKey=canonKey;
-      else if(compact.indexOf('shopee')>=0) canonKey='shopee';
-      else if(compact.indexOf('lazada')>=0||compact.indexOf('laz')>=0) canonKey='lazada';
-      else if(compact.indexOf('tiktok')>=0) canonKey='tiktok';
-      else if(compact.indexOf('tokopedia')>=0||compact.indexOf('toped')>=0) canonKey='tokopedia';
-      else canonKey='tanpamarketplace';
-      var wants=[want].concat(alias[canonKey]||[]).map(function(w){return _clickupNormName(w);});
-      var hit=(opts||[]).filter(function(o){ return wants.indexOf(_clickupNormName(o&&o.name))>=0; })[0]||
-              (opts||[]).filter(function(o){ var on=_clickupNormName(o&&o.name); return wants.some(function(w){return on&&w&&(on.indexOf(w)>=0||w.indexOf(on)>=0)&&w.length>2;}); })[0];
-      if(!hit&&opts&&opts.length) _clickupLog('warn','Marketplace ClickUp tidak cocok','Value AJW: '+value+' | Opsi: '+((opts||[]).map(function(o){return o&&o.name;}).filter(Boolean).join(', ')||'-'));
-      if(!hit&&!opts.length) return value;
-      if(type==='labels') return hit?[(hit.id!=null?hit.id:hit.orderindex)]:[];
-      return hit?(hit.id!=null?hit.id:hit.orderindex):undefined;
+    if(!opts.length){
+      /* opts belum dimuat — jangan kirim apapun, jangan sampai ClickUp mengosongkan field */
+      return undefined;
     }
+    var want=_clickupNormName(value), compact=want.replace(/\s+/g,'');
+    var alias={
+      shopee:['shopee'],
+      lazada:['lazada','laz'],
+      tiktok:['tiktok','tik tok','tiktokshop'],
+      tokopedia:['tokopedia','toped'],
+      tanpamarketplace:['tanpa marketplace','tanpa','manual','none','lainnya','lain','other']
+    };
+    var canonKey=alias[compact]?compact:
+      (compact.indexOf('shopee')>=0?'shopee':
+      (compact.indexOf('lazada')>=0||/\blaz$/.test(compact)?'lazada':
+      (compact.indexOf('tiktok')>=0?'tiktok':
+      (compact.indexOf('tokopedia')>=0||compact.indexOf('toped')>=0?'tokopedia':'tanpamarketplace'))));
+    var wants=[want].concat(alias[canonKey]||[]).map(function(w){return _clickupNormName(w);});
+    var hit=(opts||[]).filter(function(o){ return wants.indexOf(_clickupNormName(o&&o.name))>=0; })[0]||
+            (opts||[]).filter(function(o){ var on=_clickupNormName(o&&o.name); return wants.some(function(w){return on&&w&&w.length>2&&(on===w||on.indexOf(w)>=0||w.indexOf(on)>=0); }); })[0];
+    if(!hit){
+      _clickupLog('warn','Marketplace tidak cocok - field dibiarkan','AJW: "'+value+'" | Opsi ClickUp: '+opts.map(function(o){return o&&o.name;}).filter(Boolean).join(', '));
+      return undefined;
+    }
+    if(type==='labels') return [(hit.id!=null?hit.id:hit.orderindex)];
+    return hit.id!=null?hit.id:hit.orderindex;
   }
   return _clickupSupplierFieldValue(field,value);
 }
