@@ -12990,15 +12990,15 @@ function _clickupIncomeCfg(){
 function _clickupIncomeReady(){ var c=_clickupIncomeCfg(); return !!(c.enabled&&c.token&&c.listId); }
 function _clickupIncomeFieldAliases(){
   return {
-    periode:['periode'],
+    periode:['periode','bulan bayar','bulan'],
     tahun:['tahun'],
-    namaToko:['nama toko'],
+    namaToko:['nama toko','toko','platform'],
     marketplace:['marketplace'],
-    pemasukanToko:['pemasukan toko'],
-    modalProduk:['modal produk'],
-    keuntunganKerugian:['keuntungan kerugian','keuntungan / kerugian'],
-    persentaseKeuntungan:['persentase keuntungan'],
-    danaPenjualanProduk:['dana penjualan produk']
+    pemasukanToko:['pemasukan toko','pemasukan'],
+    modalProduk:['modal produk','modal'],
+    keuntunganKerugian:['keuntungan kerugian','keuntungan / kerugian','keuntungan','laba rugi'],
+    persentaseKeuntungan:['persentase keuntungan','roi','roi %','roi%','margin','persen keuntungan','persen untung'],
+    danaPenjualanProduk:['dana penjualan produk','dana penjualan','penjualan','omzet']
   };
 }
 function _clickupIncomeFieldMetaLoad(){ try{return JSON.parse(localStorage.getItem('ajw_clickup_income_field_meta')||'{}')||{};}catch(e){return {};} }
@@ -13116,8 +13116,9 @@ function _clickupIncomeMarketplaceLabel(v){
   if(n.indexOf('lazada')>=0||/\blaz\b/.test(n)) return 'Lazada';
   if(n.indexOf('tiktok')>=0||n.indexOf('tik tok')>=0) return 'Tiktok';
   if(n.indexOf('tokopedia')>=0||n.indexOf('toped')>=0) return 'Tokopedia';
-  if(n.indexOf('tanpa')>=0||n.indexOf('manual')>=0||n.indexOf('none')>=0||n.indexOf('lainnya')>=0||n.indexOf('lain')>=0||n.indexOf('other')>=0) return 'Tanpa Marketplace';
-  return s;
+  if(n.indexOf('tanpa')>=0||n.indexOf('manual')>=0||n.indexOf('none')>=0||n.indexOf('lainnya')>=0||n.indexOf('lain')>=0||n.indexOf('other')>=0||n.indexOf('offline')>=0) return 'Tanpa Marketplace';
+  /* nilai tidak dikenal (misal nama toko yang tidak mengandung nama marketplace) → gunakan fallback */
+  return 'Tanpa Marketplace';
 }
 function _clickupIncomeFieldValue(key, field, value){
   if(key==='marketplace') value=_clickupIncomeMarketplaceLabel(value);
@@ -13134,7 +13135,7 @@ function _clickupIncomeFieldValue(key, field, value){
       lazada:['lazada','laz'],
       tiktok:['tiktok','tik tok','tiktokshop'],
       tokopedia:['tokopedia','toped'],
-      tanpamarketplace:['tanpa marketplace','tanpa','manual','none','lainnya','lain','other']
+      tanpamarketplace:['tanpa marketplace','tanpa','manual','none','lainnya','lain','other','offline']
     };
     var canonKey=alias[compact]?compact:
       (compact.indexOf('shopee')>=0?'shopee':
@@ -13142,10 +13143,12 @@ function _clickupIncomeFieldValue(key, field, value){
       (compact.indexOf('tiktok')>=0?'tiktok':
       (compact.indexOf('tokopedia')>=0||compact.indexOf('toped')>=0?'tokopedia':'tanpamarketplace'))));
     var wants=[want].concat(alias[canonKey]||[]).map(function(w){return _clickupNormName(w);});
-    var hit=(opts||[]).filter(function(o){ return wants.indexOf(_clickupNormName(o&&o.name))>=0; })[0]||
-            (opts||[]).filter(function(o){ var on=_clickupNormName(o&&o.name); return wants.some(function(w){return on&&w&&w.length>2&&(on===w||on.indexOf(w)>=0||w.indexOf(on)>=0); }); })[0];
+    /* ClickUp drop_down pakai o.name, labels pakai o.label — coba keduanya */
+    function optName(o){ return (o&&(o.name||o.label))||''; }
+    var hit=(opts||[]).filter(function(o){ return wants.indexOf(_clickupNormName(optName(o)))>=0; })[0]||
+            (opts||[]).filter(function(o){ var on=_clickupNormName(optName(o)); return wants.some(function(w){return on&&w&&w.length>2&&(on===w||on.indexOf(w)>=0||w.indexOf(on)>=0); }); })[0];
     if(!hit){
-      _clickupLog('warn','Marketplace tidak cocok - field dibiarkan','AJW: "'+value+'" | Opsi ClickUp: '+opts.map(function(o){return o&&o.name;}).filter(Boolean).join(', '));
+      _clickupLog('warn','Marketplace tidak cocok - field dibiarkan','AJW: "'+value+'" | Opsi ClickUp: '+opts.map(function(o){return optName(o);}).filter(Boolean).join(', '));
       return undefined;
     }
     if(type==='labels') return [(hit.id!=null?hit.id:hit.orderindex)];
@@ -13215,11 +13218,18 @@ function _clickupIncomePayload(r,includeCustom){
   if(cf.length) payload.custom_fields=cf;
   return payload;
 }
+function _clickupIncomePayloadNoStatus(r,includeCustom){ var p=_clickupIncomePayload(r,includeCustom); delete p.status; return p; }
 function _clickupIncomeUpsert(row,taskId){
   var c=_clickupIncomeCfg();
   return _clickupIncomeLoadFieldMap().catch(function(){}).then(function(){
     if(taskId){
-      return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupIncomePayload(row,false)).then(function(res){
+      var putReq=_clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupIncomePayload(row,false)).catch(function(err){
+        var em=String((err&&err.message)||err||'').toLowerCase();
+        if(!_clickupIsStatusError(err)&&em.indexOf('http 400')<0) throw err;
+        _clickupLog('warn','Status Pendapatan tidak valid','Task diupdate tanpa status. Sesuaikan status Pendapatan di Pengaturan.');
+        return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupIncomePayloadNoStatus(row,false));
+      });
+      return putReq.then(function(res){
         return _clickupSetCustomFields(taskId,_clickupIncomeCustomFields(row),'pendapatan').then(function(done){
           if(done&&done.failed&&done.failed.join('|').indexOf('marketplace')>=0) _clickupIncomeLogMarketplaceField(row);
           return res;
@@ -13231,7 +13241,12 @@ function _clickupIncomeUpsert(row,taskId){
         return _clickupIncomeUpsert(row,'');
       });
     }
-    return _clickupCreateTaskInList(c.listId,_clickupIncomePayload(row,true)).then(function(res){
+    return _clickupCreateTaskInList(c.listId,_clickupIncomePayload(row,true)).catch(function(err){
+      var em=String((err&&err.message)||err||'').toLowerCase();
+      if(!_clickupIsStatusError(err)&&em.indexOf('http 400')<0) throw err;
+      _clickupLog('warn','Status Pendapatan tidak valid','Task dibuat tanpa status. Sesuaikan status Pendapatan di Pengaturan.');
+      return _clickupCreateTaskInList(c.listId,_clickupIncomePayloadNoStatus(row,true));
+    }).then(function(res){
       var tid=(res&&res.id)||'';
       if(!tid) return res;
       return _clickupSetCustomFields(tid,_clickupIncomeCustomFields(row),'pendapatan').then(function(done){
@@ -13509,8 +13524,9 @@ function _clickupPayrollUpsert(row,taskId){
     if(taskId){
       var updatePayload=_clickupPayrollPayload(row,false);
       var updateReq=_clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',updatePayload).catch(function(err){
-        if(!_clickupIsStatusError(err)) throw err;
-        _clickupLog('warn','Status Payroll tidak ditemukan','Task diupdate tanpa status. Sesuaikan status Payroll di Pusat Kontrol jika ingin status otomatis.');
+        var em=String((err&&err.message)||err||'').toLowerCase();
+        if(!_clickupIsStatusError(err)&&em.indexOf('http 400')<0) throw err;
+        _clickupLog('warn','Status Payroll tidak valid','Task diupdate tanpa status. Sesuaikan status Payroll di Pengaturan.');
         return _clickupSupplierRequest('/task/'+encodeURIComponent(taskId),'PUT',_clickupPayrollPayloadNoStatus(row,false));
       });
       return updateReq.then(function(res){
@@ -13528,8 +13544,9 @@ function _clickupPayrollUpsert(row,taskId){
     }
     var createPayload=_clickupPayrollPayload(row,false);
     return _clickupCreateTaskInList(c.listId,createPayload).catch(function(err){
-      if(!_clickupIsStatusError(err)) throw err;
-      _clickupLog('warn','Status Payroll tidak ditemukan','Task dibuat tanpa status. Sesuaikan status Payroll di Pusat Kontrol jika ingin status otomatis.');
+      var em=String((err&&err.message)||err||'').toLowerCase();
+      if(!_clickupIsStatusError(err)&&em.indexOf('http 400')<0) throw err;
+      _clickupLog('warn','Status Payroll tidak valid','Task dibuat tanpa status. Sesuaikan status Payroll di Pengaturan.');
       return _clickupCreateTaskInList(c.listId,_clickupPayrollPayloadNoStatus(row,false));
     }).then(function(res){
       var tid=res&&res.id;
