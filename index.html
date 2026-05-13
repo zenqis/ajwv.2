@@ -12885,7 +12885,7 @@ function _clickupIncomeMetric(r){
   if(typeof _finIncomeMetrics==='function'){
     var m=_finIncomeMetrics(r)||{};
     var toko=m.toko||r.toko||r.namaToko||r.store||r.sumber||'Tanpa Toko';
-    var market=_clickupIncomeMarketplaceLabel(r.marketplace||r.sumber||'');
+    var market=_clickupIncomeMarketplaceLabel(r.marketplace||'');
     return Object.assign({},r,m,{
       marketplace:market,
       toko:toko
@@ -12896,7 +12896,7 @@ function _clickupIncomeMetric(r){
   var flowCost=function(v){ var n=_num(v); return !n?0:(n>0?-n:n); };
   var pemasukan=dana+_num(r.subsidiMarketplace)+flowCost(r.biayaAdministrasi)+flowCost(r.biayaTransaksiPenjual)+flowCost(r.biayaLayanan)+flowCost(r.ongkosKirimDibayarPenjual)+flowCost(r.biayaPromosi)+flowCost(r.pengembalianDana)+flowCost(r.biayaPenyesuaianToko)+flowCost(r.biayaMarketplaceLainnya)+flowCost(r.bahanPengemasan)+flowCost(r.iklan)+flowCost(r.sewa)+flowCost(r.lainnya);
   var untung=pemasukan-modal;
-  return Object.assign({},r,{marketplace:_clickupIncomeMarketplaceLabel(r.marketplace||r.sumber||''),toko:(r.toko||r.namaToko||r.sumber||'Tanpa Toko'),danaPenjualanProduk:dana,modalProduk:modal,pemasukanToko:(r.pemasukanTokoSource!=null?_num(r.pemasukanTokoSource):(r.pemasukanToko!=null?_num(r.pemasukanToko):pemasukan)),keuntunganKerugian:(r.keuntunganKerugianSource!=null?_num(r.keuntunganKerugianSource):(r.keuntunganKerugian!=null?_num(r.keuntunganKerugian):untung))});
+  return Object.assign({},r,{marketplace:_clickupIncomeMarketplaceLabel(r.marketplace||''),toko:(r.toko||r.namaToko||r.sumber||'Tanpa Toko'),danaPenjualanProduk:dana,modalProduk:modal,pemasukanToko:(r.pemasukanTokoSource!=null?_num(r.pemasukanTokoSource):(r.pemasukanToko!=null?_num(r.pemasukanToko):pemasukan)),keuntunganKerugian:(r.keuntunganKerugianSource!=null?_num(r.keuntunganKerugianSource):(r.keuntunganKerugian!=null?_num(r.keuntunganKerugian):untung))});
 }
 function _clickupIncomeMarketplaceLabel(v){
   var s=String(v||'').trim();
