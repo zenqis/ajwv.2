@@ -14133,7 +14133,9 @@ function _renderToolsClickupIntegration(){
   _clickupToolsCaptureDraft();
   var cfg=getCfg()||{}, maps=cfg.clickupListMappings||{}, logs=_clickupLogLoad();
   var q=_clickupSupplierQueueLoad(), qe=_clickupExpenseQueueLoad(), qi=_clickupIncomeQueueLoad(), qp=_clickupPayrollQueueLoad(), qa=_clickupAssetQueueLoad();
-  var lists=cfg.clickupDetectedLists||[], fields=cfg.clickupDetectedFields||[], expenseFields=cfg.clickupDetectedExpenseFields||[], incomeFields=cfg.clickupDetectedIncomeFields||[], payrollFields=cfg.clickupDetectedPayrollFields||[], assetFields=cfg.clickupDetectedAssetFields||[];
+  /* Per-module detected fields — already scoped to each module's list by auto-detect */
+  var hFields=cfg.clickupDetectedFields||[], eFields=cfg.clickupDetectedExpenseFields||[], iFields=cfg.clickupDetectedIncomeFields||[], pFields=cfg.clickupDetectedPayrollFields||[], aFields=cfg.clickupDetectedAssetFields||[];
+  var lists=cfg.clickupDetectedLists||[];
   var hArr=(supplierHutang||[]), eArr=((typeof _finExpense!=='undefined'&&_finExpense)||[]), incRows=typeof _clickupIncomeRows==='function'?_clickupIncomeRows():[], pArr=(payHistory||[]), aArr=((typeof _finAssets!=='undefined'&&_finAssets)||[]);
   var synced=hArr.filter(function(d){return d.clickupSyncStatus==='synced';}).length, failed=hArr.filter(function(d){return d.clickupSyncStatus==='failed';}).length;
   var expSynced=eArr.filter(function(d){return d.clickupSyncStatus==='synced';}).length, expFailed=eArr.filter(function(d){return d.clickupSyncStatus==='failed';}).length;
@@ -14144,340 +14146,325 @@ function _renderToolsClickupIntegration(){
   var failTotal=failed+expFailed+incFailed+payFailed+astFailed;
   var dataTotal=hArr.length+eArr.length+incRows.length+pArr.length+aArr.length;
   var doneTotal=synced+expSynced+incSynced+paySynced+astSynced;
-  var progress=dataTotal?Math.max(0,Math.min(100,Math.round(doneTotal/dataTotal*100))):(queueTotal?15:100);
-  var fieldTotal=fields.length+expenseFields.length+incomeFields.length+payrollFields.length+assetFields.length;
+  /* Health = success rate of attempted syncs only — queue is in-progress, not failure */
+  var attempted=doneTotal+failTotal;
+  var health=attempted>0?Math.max(0,Math.min(100,Math.round(doneTotal/attempted*100))):(queueTotal>0?85:100);
+  var fieldTotal=hFields.length+eFields.length+iFields.length+pFields.length+aFields.length;
   var mappedCore=(cfg.clickupSupplierListId?1:0)+(cfg.clickupExpenseListId?1:0)+(cfg.clickupIncomeListId?1:0)+(cfg.clickupPayrollListId?1:0)+(cfg.clickupAssetListId?1:0);
   var lastLog=logs[0]||{}, lastLabel=lastLog.ts?new Date(lastLog.ts).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
   var view=window._clickupToolsView||(function(){try{return localStorage.getItem('ajw_clickup_view')||'dash';}catch(e){return 'dash';}})();
   var draft=_clickupToolsDraft();
   function cv(id,fb){return draft[id]!==undefined?draft[id]:(fb||'');}
   function ck(id,fb){return draft[id]!==undefined?!!draft[id]:!!fb;}
-  function lc(l){return l==='error'?'#B91C1C':(l==='warn'?'#B45309':(l==='success'?'#15803D':'#1D4ED8'));}
-  function ll(l){return l==='error'?'Error':(l==='warn'?'Warn':(l==='success'?'OK':'Info'));}
-  function tab(id,label,icon){return '<button class="cu-tab'+(view===id?' active':'')+'" onclick="_clickupToolsSetView(\''+id+'\')">'+icon+' '+label+'</button>';}
-  function pbar(pct,fail){var c=fail?'#B91C1C':(pct>=100?'#15803D':(pct>50?'#D97706':'#3B82F6'));return '<div style="height:5px;border-radius:3px;background:#E5EAF1;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+c+';transition:width .4s"></div></div>';}
-  function badge(txt,color,bg){return '<span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:900;background:'+(bg||color+'18')+';color:'+color+'">'+txt+'</span>';}
-  function statBadge(synced,total,queue,fail){if(fail>0) return badge('ERROR','#B91C1C');if(queue>0) return badge('QUEUE','#D97706');if(!total) return badge('KOSONG','#94A3B8');if(synced>=total) return badge('SYNCED','#15803D');return badge(synced+'/'+total,'#3B82F6');}
-  var h='';
-  h+='<style>';
-  h+='.cu-wrap{padding:4px 2px 14px;font-family:Arial,sans-serif}';
-  h+='.cu-hdr{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}';
-  h+='.cu-hdr-title{font-size:18px;font-weight:900;color:var(--tx)}';
-  h+='.cu-hdr-sub{font-size:11px;color:var(--tx2);margin-top:2px}';
-  h+='.cu-tabbar{display:flex;gap:4px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:5px;margin-bottom:14px}';
-  h+='.cu-tab{appearance:none;border:1px solid transparent;background:transparent;color:var(--tx2);border-radius:6px;padding:6px 12px;font:700 11px Arial,sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .15s}';
-  h+='.cu-tab:hover{background:var(--bg);border-color:var(--bd);color:var(--tx)}';
-  h+='.cu-tab.active{background:#c77818;border-color:#c77818;color:#fff}';
-  h+='.cu-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px}';
-  h+='.cu-kpi{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;border-top-width:3px}';
-  h+='.cu-kpi-lbl{font-size:9px;font-weight:900;text-transform:uppercase;color:var(--tx2);letter-spacing:.5px}';
-  h+='.cu-kpi-val{font-size:20px;font-weight:900;color:var(--tx);margin-top:3px;line-height:1}';
-  h+='.cu-kpi-sub{font-size:10px;color:var(--tx2);margin-top:2px}';
-  h+='.cu-section{background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:12px}';
-  h+='.cu-section-hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}';
-  h+='.cu-section-title{font-size:13px;font-weight:900;color:var(--tx)}';
-  h+='.cu-section-sub{font-size:10px;color:var(--tx2)}';
-  h+='.cu-mod-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--bd);border-radius:8px;margin-bottom:7px}';
-  h+='.cu-mod-icon{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}';
-  h+='.cu-mod-info{flex:1;min-width:0}';
-  h+='.cu-mod-name{font-size:12px;font-weight:900;color:var(--tx)}';
-  h+='.cu-mod-meta{font-size:10px;color:var(--tx2);margin-top:2px}';
-  h+='.cu-mod-pbar{margin-top:5px}';
-  h+='.cu-mod-actions{display:flex;gap:5px;flex-shrink:0}';
-  h+='.cu-btn{appearance:none;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:6px;padding:6px 11px;font:700 11px Arial,sans-serif;cursor:pointer;white-space:nowrap;transition:all .12s}';
-  h+='.cu-btn:hover{background:var(--bd)}';
-  h+='.cu-btn-primary{background:#c77818;border-color:#c77818;color:#fff}';
-  h+='.cu-btn-primary:hover{background:#a86015}';
-  h+='.cu-btn-sm{padding:4px 8px;font-size:10px}';
-  h+='.cu-btn-danger{border-color:#FCA5A5;color:#B91C1C}';
-  h+='.cu-btn-danger:hover{background:#FEF2F2}';
-  h+='.cu-input{width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);padding:6px 9px;font:400 12px Arial,sans-serif}';
-  h+='.cu-input:focus{outline:none;border-color:#c77818;box-shadow:0 0 0 2px #c7781820}';
-  h+='.cu-lbl{font-size:10px;font-weight:800;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;display:block}';
-  h+='.cu-field{display:grid;gap:5px;margin-bottom:10px}';
-  h+='.cu-det{border:1px solid var(--bd);border-radius:8px;background:var(--bg);overflow:hidden;margin-bottom:9px}';
-  h+='.cu-det summary{cursor:pointer;padding:10px 13px;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px}';
-  h+='.cu-det summary::-webkit-details-marker{display:none}';
-  h+='.cu-det summary b{font-size:12px;color:var(--tx)}';
-  h+='.cu-det summary span{font-size:10px;color:var(--tx2)}';
-  h+='.cu-det-body{padding:0 13px 13px;border-top:1px solid var(--bd)}';
-  h+='.cu-log-row{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:7px;margin-bottom:5px}';
-  h+='.cu-log-lbl{font-size:10px;font-weight:900;min-width:38px}';
-  h+='.cu-log-ts{font-size:10px;color:var(--tx2);white-space:nowrap;flex-shrink:0}';
-  h+='.cu-log-body{flex:1;min-width:0}';
-  h+='.cu-log-title{font-size:11px;font-weight:800;color:var(--tx)}';
-  h+='.cu-log-detail{font-size:10px;color:var(--tx2);margin-top:2px;line-height:1.4}';
-  h+='.cu-2col{display:grid;grid-template-columns:1fr 1fr;gap:9px}';
-  h+='.cu-3col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}';
-  h+='.cu-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:7px;margin-bottom:12px}';
-  h+='.cu-health-bar{height:10px;border-radius:5px;background:#E5EAF1;border:1px solid var(--bd);overflow:hidden;margin-bottom:14px}';
-  h+='.cu-health-fill{height:100%;transition:width .5s;border-radius:5px}';
-  h+='.cu-token-note{background:#FFF7ED;border:1px solid #FDE68A;border-radius:7px;padding:9px 11px;font-size:11px;color:#92400E;margin-bottom:10px;line-height:1.5}';
-  h+='.cu-realtime{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--bd);border-radius:99px;padding:5px 12px;font-size:11px;font-weight:800;color:var(--tx);cursor:pointer}';
-  h+='</style>';
+  function lc(l){return l==='error'?'#B91C1C':(l==='warn'?'#B45309':(l==='success'?'#15803D':'#64748B'));}
+  function ll(l){return l==='error'?'ERR':(l==='warn'?'WARN':(l==='success'?'OK':'INFO'));}
+  function tab(id,label){return '<button class="cut-tab'+(view===id?' active':'')+'" onclick="_clickupToolsSetView(\''+id+'\')">'+label+'</button>';}
+  function pbar(pct,c){return '<div style="height:3px;background:var(--bd);border-radius:2px;overflow:hidden;margin-top:4px"><div style="height:100%;width:'+pct+'%;background:'+(c||'#15803D')+';border-radius:2px;transition:width .4s"></div></div>';}
+  function stColor(s,t,q,f){return f>0?'#B91C1C':(q>0?'#B45309':(s>=t&&t>0?'#15803D':'#94A3B8'));}
+  function stLabel(s,t,q,f){return f>0?'Error':(q>0?'Queue':(t===0?'Kosong':(s>=t?'Synced':s+'/'+t)));}
+  function badge(txt,c){return '<span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:3px;background:'+c+'16;color:'+c+';border:1px solid '+c+'30;white-space:nowrap">'+txt+'</span>';}
+  function fnorm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim();}
+  var hasToken=!!(cfg.clickupToken), isOn=ck('CUT-EN',cfg.clickupSupplierEnabled);
+  var hColor=failTotal>0?'#B91C1C':(queueTotal>0?'#B45309':'#15803D');
 
-  var isOn=ck('CUT-EN',cfg.clickupSupplierEnabled);
-  var hColor=failTotal?'#B91C1C':(queueTotal?'#D97706':'#15803D');
-  var hasToken=!!(cfg.clickupToken);
-
-  /* ── Modules definition ── */
   var mods=[
-    {key:'hutang',label:'Hutang Supplier',icon:'📦',color:'#3B82F6',bg:'#EFF6FF',total:hArr.length,synced:synced,failed:failed,queue:q.length,listId:cfg.clickupSupplierListId,listKey:'hutang_supplier',listInput:'CUT-LIST-HUTANG',syncFn:'_clickupSupplierSyncNow()'},
-    {key:'pengeluaran',label:'Pengeluaran',icon:'💸',color:'#F59E0B',bg:'#FFFBEB',total:eArr.length,synced:expSynced,failed:expFailed,queue:qe.length,listId:cfg.clickupExpenseListId,listKey:'finance_expense',listInput:'CUT-LIST-EXPENSE',syncFn:'_clickupExpenseSyncNow()'},
-    {key:'pendapatan',label:'Pendapatan',icon:'💰',color:'#10B981',bg:'#ECFDF5',total:incRows.length,synced:incSynced,failed:incFailed,queue:qi.length,listId:cfg.clickupIncomeListId,listKey:'finance_income',listInput:'CUT-LIST-INCOME',syncFn:'_clickupIncomeSyncNow()'},
-    {key:'payroll',label:'Payroll',icon:'👥',color:'#8B5CF6',bg:'#F5F3FF',total:pArr.length,synced:paySynced,failed:payFailed,queue:qp.length,listId:cfg.clickupPayrollListId,listKey:'hr_payroll',listInput:'CUT-LIST-PAYROLL',syncFn:'_clickupPayrollSyncNow()'},
-    {key:'aset',label:'Aset',icon:'🏗️',color:'#EC4899',bg:'#FDF2F8',total:aArr.length,synced:astSynced,failed:astFailed,queue:qa.length,listId:cfg.clickupAssetListId,listKey:'finance_asset',listInput:'CUT-LIST-ASSET',syncFn:'_clickupAssetSyncNow()'}
+    {key:'hutang',label:'Hutang Supplier',total:hArr.length,synced:synced,failed:failed,queue:q.length,listId:cfg.clickupSupplierListId,listKey:'hutang_supplier',listInput:'CUT-LIST-HUTANG',syncFn:'_clickupSupplierSyncNow()',fields:hFields,
+     ajwFields:['supplier','hutang','bayar','sisa','status','lunas','cicil','jatuh tempo','catatan','due']},
+    {key:'pengeluaran',label:'Pengeluaran',total:eArr.length,synced:expSynced,failed:expFailed,queue:qe.length,listId:cfg.clickupExpenseListId,listKey:'finance_expense',listInput:'CUT-LIST-EXPENSE',syncFn:'_clickupExpenseSyncNow()',fields:eFields,
+     ajwFields:['tanggal','jumlah','keterangan','kategori','metode','akun','biaya','nominal']},
+    {key:'pendapatan',label:'Pendapatan',total:incRows.length,synced:incSynced,failed:incFailed,queue:qi.length,listId:cfg.clickupIncomeListId,listKey:'finance_income',listInput:'CUT-LIST-INCOME',syncFn:'_clickupIncomeSyncNow()',fields:iFields,
+     ajwFields:['tanggal','toko','marketplace','nominal','keterangan','status','platform','pendapatan']},
+    {key:'payroll',label:'Payroll',total:pArr.length,synced:paySynced,failed:payFailed,queue:qp.length,listId:cfg.clickupPayrollListId,listKey:'hr_payroll',listInput:'CUT-LIST-PAYROLL',syncFn:'_clickupPayrollSyncNow()',fields:pFields,
+     ajwFields:['nama','periode','gaji','tunjangan','potongan','total','karyawan']},
+    {key:'aset',label:'Aset',total:aArr.length,synced:astSynced,failed:astFailed,queue:qa.length,listId:cfg.clickupAssetListId,listKey:'finance_asset',listInput:'CUT-LIST-ASSET',syncFn:'_clickupAssetSyncNow()',fields:aFields,
+     ajwFields:['nama','aset','kategori','nilai','harga','tanggal','kondisi','keterangan']}
   ];
 
-  h+='<div class="cu-wrap">';
+  var h='';
+  h+='<style>';
+  h+='.cut-wrap{font-size:12px;color:var(--tx)}';
+  h+='.cut-tabbar{display:flex;gap:3px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:4px;margin-bottom:12px}';
+  h+='.cut-tab{flex:1;appearance:none;border:1px solid transparent;background:transparent;color:var(--tx2);border-radius:4px;padding:5px 8px;font:700 11px Arial,sans-serif;cursor:pointer;text-align:center;transition:all .12s}';
+  h+='.cut-tab:hover{color:var(--tx);border-color:var(--bd)}';
+  h+='.cut-tab.active{background:#c77818;color:#fff;border-color:#c77818}';
+  h+='.cut-card{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:10px}';
+  h+='.cut-hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--bd)}';
+  h+='.cut-hdr-t{font-size:12px;font-weight:900;color:var(--tx)}';
+  h+='.cut-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:7px;margin-bottom:11px}';
+  h+='.cut-kpi-c{background:var(--bg2);border:1px solid var(--bd);border-left-width:3px;border-radius:6px;padding:8px 10px}';
+  h+='.cut-kpi-l{font-size:9px;font-weight:900;text-transform:uppercase;color:var(--tx2);letter-spacing:.3px}';
+  h+='.cut-kpi-v{font-size:19px;font-weight:900;color:var(--tx);line-height:1;margin-top:2px}';
+  h+='.cut-kpi-s{font-size:10px;color:var(--tx2);margin-top:1px}';
+  h+='.cut-tbl{width:100%;border-collapse:collapse;font-size:11px}';
+  h+='.cut-tbl th{padding:4px 7px;text-align:left;font-size:9px;font-weight:900;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--bd);background:var(--bg2)}';
+  h+='.cut-tbl td{padding:6px 7px;border-bottom:1px solid var(--bd);vertical-align:middle;color:var(--tx)}';
+  h+='.cut-tbl tr:last-child td{border-bottom:none}';
+  h+='.cut-acrd{border:1px solid var(--bd);border-radius:6px;background:var(--bg);overflow:hidden;margin-bottom:7px}';
+  h+='.cut-acrd>summary{cursor:pointer;padding:8px 11px;list-style:none;display:flex;align-items:center;gap:7px;font-size:11px}';
+  h+='.cut-acrd>summary::-webkit-details-marker{display:none}';
+  h+='.cut-acrd-body{padding:10px 11px;border-top:1px solid var(--bd)}';
+  h+='.cut-note{border:1px solid var(--bd);border-radius:5px;padding:7px 10px;font-size:10px;color:var(--tx2);line-height:1.5;margin-bottom:9px;background:var(--bg2)}';
+  h+='.cut-note-w{background:#FFFBEB;border-color:#FDE68A;color:#92400E}';
+  h+='.cut-fld{margin-bottom:9px}';
+  h+='.cut-lbl{font-size:10px;font-weight:800;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px;display:block}';
+  h+='.cut-inp{width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:5px;background:var(--bg);color:var(--tx);padding:5px 8px;font:400 12px Arial,sans-serif}';
+  h+='.cut-inp:focus{outline:none;border-color:#c77818}';
+  h+='.cut-2col{display:grid;grid-template-columns:1fr 1fr;gap:9px}';
+  h+='.cut-3col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}';
+  h+='</style>';
 
-  /* ── Header ── */
-  h+='<div class="cu-hdr">';
-  h+='<div><div class="cu-hdr-title">ClickUp Integration</div><div class="cu-hdr-sub">Monitor, sinkron, dan kelola integrasi data AJW ke ClickUp secara real-time.</div></div>';
-  h+='<label class="cu-realtime"><input type="checkbox" id="CUT-EN" '+(isOn?'checked':'')+' onchange="_clickupToolsSaveCfg()"> <span style="width:8px;height:8px;border-radius:50%;background:'+(isOn?'#15803D':'#94A3B8')+';display:inline-block"></span> Realtime '+(isOn?'<b style="color:#15803D">Aktif</b>':'<b style="color:#94A3B8">Off</b>')+'</label>';
-  h+='</div>';
+  h+='<div class="cut-wrap">';
 
-  /* ── Tab bar ── */
-  h+='<div class="cu-tabbar">'+tab('dash','Dashboard','📊')+tab('sync','Sinkron','🔄')+tab('log','Log','📋')+tab('settings','Pengaturan','⚙️')+'</div>';
+  /* Header */
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:11px">';
+  h+='<div><div style="font-size:15px;font-weight:900;color:var(--tx)">ClickUp Integration</div><div style="font-size:10px;color:var(--tx2);margin-top:2px">Monitor &amp; sinkronisasi AJW → ClickUp · '+mappedCore+'/5 modul aktif · '+doneTotal+'/'+dataTotal+' synced</div></div>';
+  h+='<div style="display:flex;align-items:center;gap:6px">';
+  h+='<label style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--tx);cursor:pointer;white-space:nowrap"><input type="checkbox" id="CUT-EN" '+(isOn?'checked':'')+' onchange="_clickupToolsSaveCfg()"> Realtime '+(isOn?badge('Aktif','#15803D'):badge('Off','#94A3B8'))+'</label>';
+  h+='<button class="btnp" onclick="_clickupToolsSyncNow()">Sync Semua</button>';
+  h+='<button class="btns" onclick="_clickupToolsSaveCfg()">Simpan</button>';
+  h+='</div></div>';
 
-  /* ════════════════════════════════════════
-     TAB: DASHBOARD
-  ════════════════════════════════════════ */
+  /* Tab bar */
+  h+='<div class="cut-tabbar">'+tab('dash','Dashboard')+tab('sync','Sinkron & Field')+tab('log','Log')+tab('settings','Pengaturan')+'</div>';
+
+  /* ══════ DASHBOARD ══════ */
   if(view==='dash'){
-    /* KPI row */
-    h+='<div class="cu-kpi-grid">';
-    h+='<div class="cu-kpi" style="border-top-color:'+hColor+'"><div class="cu-kpi-lbl">Sync Health</div><div class="cu-kpi-val">'+progress+'%</div><div class="cu-kpi-sub">'+esc(lastLabel)+'</div></div>';
-    h+='<div class="cu-kpi" style="border-top-color:#3B82F6"><div class="cu-kpi-lbl">Total Data</div><div class="cu-kpi-val">'+dataTotal+'</div><div class="cu-kpi-sub">'+doneTotal+' synced</div></div>';
-    h+='<div class="cu-kpi" style="border-top-color:#D97706"><div class="cu-kpi-lbl">Queue</div><div class="cu-kpi-val">'+queueTotal+'</div><div class="cu-kpi-sub">H:'+q.length+' E:'+qe.length+' I:'+qi.length+' P:'+qp.length+' A:'+qa.length+'</div></div>';
-    h+='<div class="cu-kpi" style="border-top-color:'+(failTotal?'#B91C1C':'#15803D')+'"><div class="cu-kpi-lbl">Error</div><div class="cu-kpi-val">'+failTotal+'</div><div class="cu-kpi-sub">'+(failTotal?'Perlu dicek':'Tidak ada error')+'</div></div>';
-    h+='<div class="cu-kpi" style="border-top-color:'+(hasToken?'#15803D':'#B91C1C')+'"><div class="cu-kpi-lbl">Koneksi</div><div class="cu-kpi-val">'+(hasToken?'✓':'✗')+'</div><div class="cu-kpi-sub">'+(hasToken?'Token ada':'Perlu setup')+'</div></div>';
+    /* KPI */
+    h+='<div class="cut-kpi">';
+    h+='<div class="cut-kpi-c" style="border-left-color:'+hColor+'"><div class="cut-kpi-l">Sync Health</div><div class="cut-kpi-v">'+health+'%</div><div class="cut-kpi-s">'+(attempted?attempted+' dicoba':'Belum ada sync')+'</div></div>';
+    h+='<div class="cut-kpi-c" style="border-left-color:'+(failTotal?'#B91C1C':'var(--bd)')+'"><div class="cut-kpi-l">Error</div><div class="cut-kpi-v" style="color:'+(failTotal?'#B91C1C':'var(--tx)')+'">'+failTotal+'</div><div class="cut-kpi-s">'+(failTotal?'Perlu diperbaiki':'Bersih')+'</div></div>';
+    h+='<div class="cut-kpi-c" style="border-left-color:'+(queueTotal?'#B45309':'var(--bd)')+'"><div class="cut-kpi-l">Queue</div><div class="cut-kpi-v">'+queueTotal+'</div><div class="cut-kpi-s">H:'+q.length+' E:'+qe.length+' I:'+qi.length+' P:'+qp.length+' A:'+qa.length+'</div></div>';
+    h+='<div class="cut-kpi-c" style="border-left-color:var(--bd)"><div class="cut-kpi-l">Data</div><div class="cut-kpi-v">'+dataTotal+'</div><div class="cut-kpi-s">'+doneTotal+' synced</div></div>';
+    h+='<div class="cut-kpi-c" style="border-left-color:'+(hasToken?'#15803D':'#B91C1C')+'"><div class="cut-kpi-l">Koneksi</div><div class="cut-kpi-v" style="color:'+(hasToken?'#15803D':'#B91C1C')+'">'+(hasToken?'OK':'—')+'</div><div class="cut-kpi-s">'+(hasToken?'Token aktif':'Token kosong')+'</div></div>';
     h+='</div>';
-
     /* Health bar */
-    h+='<div class="cu-health-bar"><div class="cu-health-fill" style="width:'+progress+'%;background:'+hColor+'"></div></div>';
+    h+='<div style="height:5px;background:var(--bd);border-radius:3px;overflow:hidden;margin-bottom:12px"><div style="height:100%;width:'+health+'%;background:'+hColor+';border-radius:3px;transition:width .5s"></div></div>';
 
-    /* Module cards + Quick actions side by side */
-    h+='<div style="display:grid;grid-template-columns:1fr minmax(0,340px);gap:12px;align-items:start">';
+    /* 2-col: module table + actions/log */
+    h+='<div style="display:grid;grid-template-columns:1fr 240px;gap:10px;align-items:start">';
 
-    /* Module cards */
-    h+='<div>';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Status Modul</span><span class="cu-section-sub">'+mappedCore+'/5 list terpasang · '+fieldTotal+' field terdeteksi</span></div>';
+    /* Module status table */
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr"><span class="cut-hdr-t">Status Modul</span><span style="font-size:10px;color:var(--tx2)">'+esc(lastLabel)+'</span></div>';
+    h+='<table class="cut-tbl"><thead><tr><th>Modul</th><th style="text-align:right">Synced</th><th style="text-align:right">Queue</th><th style="text-align:right">Error</th><th style="text-align:right">Status</th><th style="text-align:right">Fields</th></tr></thead><tbody>';
     mods.forEach(function(m){
-      var mpct=m.total?Math.round(m.synced/m.total*100):(!m.listId?0:100);
-      h+='<div class="cu-mod-row">';
-      h+='<div class="cu-mod-icon" style="background:'+m.bg+';color:'+m.color+'">'+m.icon+'</div>';
-      h+='<div class="cu-mod-info">';
-      h+='<div style="display:flex;align-items:center;gap:7px"><span class="cu-mod-name">'+m.label+'</span>'+statBadge(m.synced,m.total,m.queue,m.failed)+'</div>';
-      h+='<div class="cu-mod-meta">'+m.synced+'/'+m.total+' synced'+(m.queue?' · '+m.queue+' queue':'')+(m.failed?' · '+m.failed+' error':'')+(m.listId?' · List terpasang':' · <span style="color:#B91C1C">List belum dipasang</span>')+'</div>';
-      h+='<div class="cu-mod-pbar">'+pbar(mpct,m.failed>0)+'</div>';
-      h+='</div>';
-      h+='<div class="cu-mod-actions"><button class="cu-btn cu-btn-sm" onclick="'+m.syncFn+'">Sync</button></div>';
-      h+='</div>';
+      var sc=stColor(m.synced,m.total,m.queue,m.failed), sl=stLabel(m.synced,m.total,m.queue,m.failed);
+      var hp=(m.synced+m.failed)>0?Math.round(m.synced/(m.synced+m.failed)*100):0;
+      h+='<tr><td><div style="font-weight:900">'+esc(m.label)+'</div>'+pbar(hp,sc)+'<div style="font-size:9px;color:var(--tx2);margin-top:2px">'+(m.listId?'List terpasang':'<span style="color:#B91C1C">Belum dipasang</span>')+'</div></td>';
+      h+='<td style="text-align:right;font-weight:900">'+m.synced+'<span style="color:var(--tx2);font-weight:400">/'+m.total+'</span></td>';
+      h+='<td style="text-align:right;color:'+(m.queue?'#B45309':'var(--tx2)')+'">'+m.queue+'</td>';
+      h+='<td style="text-align:right;color:'+(m.failed?'#B91C1C':'var(--tx2)')+'">'+m.failed+'</td>';
+      h+='<td style="text-align:right">'+badge(sl,sc)+'</td>';
+      h+='<td style="text-align:right;color:var(--tx2)">'+m.fields.length+'</td>';
+      h+='</tr>';
     });
-    h+='</div>';
+    h+='</tbody></table></div>';
 
-    /* Quick actions */
+    /* Right: actions + mini log */
     h+='<div>';
-    h+='<div class="cu-section" style="margin-bottom:12px">';
-    h+='<div class="cu-section-hdr" style="margin-bottom:9px"><span class="cu-section-title">Aksi Cepat</span></div>';
-    h+='<div style="display:grid;gap:6px">';
-    h+='<button class="cu-btn cu-btn-primary" onclick="_clickupToolsSyncNow()" style="width:100%">🔄 Sync Semua</button>';
-    h+='<button class="cu-btn" onclick="_clickupToolsRepairCustomFieldValues()" style="width:100%">🔧 Repair Custom Field</button>';
-    h+='<button class="cu-btn" onclick="_clickupToolsAutoDetectAll()" style="width:100%">🔍 Auto Detect Lists</button>';
-    h+='<button class="cu-btn" onclick="_clickupToolsMapFields()" style="width:100%">🗂️ Auto Mapping Field</button>';
-    h+='<button class="cu-btn" onclick="_clickupToolsTest()" style="width:100%">📡 Test Token</button>';
-    h+='<button class="cu-btn" onclick="_clickupToolsSaveCfg()" style="width:100%">💾 Simpan Config</button>';
+    h+='<div class="cut-card" style="margin-bottom:8px">';
+    h+='<div class="cut-hdr" style="margin-bottom:8px"><span class="cut-hdr-t">Aksi</span></div>';
+    h+='<div style="display:grid;gap:4px">';
+    h+='<button class="btnp" onclick="_clickupToolsSyncNow()" style="width:100%;text-align:left">Sync Semua</button>';
+    h+='<button class="btns" onclick="_clickupToolsRepairCustomFieldValues()" style="width:100%;text-align:left">Repair Custom Field</button>';
+    h+='<button class="btns" onclick="_clickupToolsAutoDetectAll()" style="width:100%;text-align:left">Auto Detect Lists</button>';
+    h+='<button class="btns" onclick="_clickupToolsMapFields()" style="width:100%;text-align:left">Auto Mapping Field</button>';
+    h+='<button class="btns" onclick="_clickupToolsTest()" style="width:100%;text-align:left">Test Koneksi</button>';
+    h+='<hr style="border:none;border-top:1px solid var(--bd);margin:2px 0">';
+    h+='<button class="btns" onclick="_clickupToolsSetView(\'settings\')" style="width:100%;text-align:left">Pengaturan List &amp; Token</button>';
+    h+='<button class="btns" onclick="_clickupLogClear()" style="width:100%;text-align:left;color:#B91C1C">Bersihkan Log</button>';
     h+='</div></div>';
-
-    /* Mini log */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr" style="margin-bottom:9px"><span class="cu-section-title">Log Terbaru</span><button class="cu-btn cu-btn-sm" onclick="_clickupToolsSetView(\'log\')">Lihat Semua</button></div>';
-    var miniLogs=logs.slice(0,5);
-    if(miniLogs.length){
-      miniLogs.forEach(function(l){
-        var bg=l.level==='error'?'#FEF2F2':(l.level==='warn'?'#FFFBEB':(l.level==='success'?'#F0FDF4':'#EFF6FF'));
-        h+='<div class="cu-log-row" style="background:'+bg+'"><span class="cu-log-lbl" style="color:'+lc(l.level)+'">'+ll(l.level)+'</span><div class="cu-log-body"><div class="cu-log-title">'+esc(l.title||'—')+'</div></div><span class="cu-log-ts">'+esc(l.ts?new Date(l.ts).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'-')+'</span></div>';
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr" style="margin-bottom:7px"><span class="cut-hdr-t">Log Terbaru</span><button class="btnsm" onclick="_clickupToolsSetView(\'log\')">Semua</button></div>';
+    if(logs.length){
+      logs.slice(0,6).forEach(function(l){
+        h+='<div style="display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px solid var(--bd)">';
+        h+='<span style="font-size:9px;font-weight:900;color:'+lc(l.level)+';min-width:28px;padding-top:1px">'+ll(l.level)+'</span>';
+        h+='<span style="font-size:10px;color:var(--tx);flex:1;line-height:1.3;word-break:break-word">'+esc((l.title||'').slice(0,45))+'</span>';
+        h+='<span style="font-size:9px;color:var(--tx2);white-space:nowrap;flex-shrink:0">'+esc(l.ts?new Date(l.ts).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'-')+'</span>';
+        h+='</div>';
       });
-    }else{h+='<div style="padding:10px;color:var(--tx2);font-size:11px">Belum ada log.</div>';}
+    }else{h+='<div style="font-size:10px;color:var(--tx2);padding:4px 0">Belum ada log.</div>';}
+    h+='</div></div>';
     h+='</div>';
-    h+='</div>';
-
-    h+='</div>'; /* end 2-col grid */
   }
 
-  /* ════════════════════════════════════════
-     TAB: SINKRON
-  ════════════════════════════════════════ */
+  /* ══════ SINKRON & FIELD ══════ */
   else if(view==='sync'){
-    /* Overall progress */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Progress Keseluruhan</span><span class="cu-section-sub">'+doneTotal+' / '+dataTotal+' data — '+progress+'%</span></div>';
-    h+='<div style="height:12px;border-radius:6px;background:#E5EAF1;overflow:hidden;margin-bottom:10px"><div style="height:100%;width:'+progress+'%;background:'+hColor+';border-radius:6px;transition:width .5s"></div></div>';
-    h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px">';
-    mods.forEach(function(m){var p=m.total?Math.round(m.synced/m.total*100):0;h+='<div style="text-align:center;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:7px"><div style="font-size:15px">'+m.icon+'</div><div style="font-size:11px;font-weight:900;color:var(--tx)">'+p+'%</div><div style="font-size:9px;color:var(--tx2)">'+m.label+'</div>'+pbar(p,m.failed>0)+'</div>';});
+    /* Overall bar */
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr"><span class="cut-hdr-t">Keseluruhan — '+health+'% berhasil</span>';
+    h+='<div style="display:flex;gap:5px"><button class="btnsm" onclick="_clickupToolsSyncNow()">Sync Semua</button><button class="btnsm" onclick="_clickupToolsRepairCustomFieldValues()">Repair</button><button class="btnsm" onclick="_clickupToolsAutoDetectAll()">Detect</button></div>';
+    h+='</div>';
+    h+='<div style="height:7px;background:var(--bd);border-radius:4px;overflow:hidden;margin-bottom:9px"><div style="height:100%;width:'+health+'%;background:'+hColor+';border-radius:4px;transition:width .5s"></div></div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">';
+    mods.forEach(function(m){
+      var p=(m.synced+m.failed)>0?Math.round(m.synced/(m.synced+m.failed)*100):0, c=stColor(m.synced,m.total,m.queue,m.failed);
+      h+='<div style="text-align:center;background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:6px 4px">';
+      h+='<div style="font-size:13px;font-weight:900;color:var(--tx)">'+p+'%</div>';
+      h+='<div style="font-size:9px;color:var(--tx2);margin-top:1px">'+esc(m.label.split(' ')[0])+'</div>';
+      h+=pbar(p,c);
+      h+='</div>';
+    });
     h+='</div></div>';
 
-    /* Per-module detail rows */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Sinkron Per Modul</span><button class="cu-btn cu-btn-primary" onclick="_clickupToolsSyncNow()">Sync Semua</button></div>';
+    /* Per-module accordion with custom fields */
     mods.forEach(function(m){
-      var mpct=m.total?Math.round(m.synced/m.total*100):(m.listId?100:0);
-      h+='<div class="cu-mod-row">';
-      h+='<div class="cu-mod-icon" style="background:'+m.bg+';color:'+m.color+'">'+m.icon+'</div>';
-      h+='<div class="cu-mod-info">';
-      h+='<div style="display:flex;align-items:center;gap:7px"><span class="cu-mod-name">'+m.label+'</span>'+statBadge(m.synced,m.total,m.queue,m.failed)+'</div>';
-      h+='<div class="cu-mod-meta">'+(m.listId?'List: '+esc(m.listId.slice(-8))+'…':'<span style="color:#B91C1C">List belum dipasang</span>')+' · '+m.synced+'/'+m.total+' synced'+(m.queue?' · <b style="color:#D97706">'+m.queue+' queue</b>':'')+(m.failed?' · <b style="color:#B91C1C">'+m.failed+' error</b>':'')+'</div>';
-      h+='<div class="cu-mod-pbar">'+pbar(mpct,m.failed>0)+'</div>';
-      h+='</div>';
-      h+='<div class="cu-mod-actions">';
-      h+='<button class="cu-btn cu-btn-sm cu-btn-primary" onclick="'+m.syncFn+'">Sync</button>';
-      if(!m.listId) h+='<button class="cu-btn cu-btn-sm" onclick="_clickupToolsSetView(\'settings\')">Setup</button>';
-      h+='</div></div>';
+      var hp=(m.synced+m.failed)>0?Math.round(m.synced/(m.synced+m.failed)*100):0;
+      var sc=stColor(m.synced,m.total,m.queue,m.failed), sl=stLabel(m.synced,m.total,m.queue,m.failed);
+      var okey='ajw_cu_acrd_'+m.key, isOpen=false; try{isOpen=localStorage.getItem(okey)==='1';}catch(e){}
+      h+='<details class="cut-acrd" '+(isOpen?'open':'')+' ontoggle="try{localStorage.setItem(\''+okey+'\',this.open?\'1\':\'0\')}catch(e){}">';
+      h+='<summary>';
+      h+='<span style="font-weight:900;flex:1">'+esc(m.label)+'</span>';
+      h+=badge(sl,sc);
+      h+='<span style="color:var(--tx2);margin:0 5px">'+m.synced+'/'+m.total+(m.queue?' · '+m.queue+' queue':'')+(m.failed?' · <span style="color:#B91C1C">'+m.failed+' err</span>':'')+'</span>';
+      h+=pbar(hp,sc);
+      h+='<button class="btnsm" onclick="event.preventDefault();event.stopPropagation();'+m.syncFn+'" style="margin-left:6px;flex-shrink:0">Sync</button>';
+      if(!m.listId) h+='<button class="btnsm" onclick="event.preventDefault();event.stopPropagation();_clickupToolsSetView(\'settings\')" style="flex-shrink:0">Setup</button>';
+      h+='</summary>';
+      h+='<div class="cut-acrd-body">';
+      /* Stats row */
+      h+='<div style="font-size:10px;color:var(--tx2);margin-bottom:9px">List: '+(m.listId?'<code style="font-size:9px;background:var(--bg2);padding:1px 4px;border-radius:3px">'+esc(m.listId)+'</code>':'<span style="color:#B91C1C">Belum dipasang</span>')+' · '+m.synced+' synced · '+m.failed+' error · '+m.queue+' queue · '+m.total+' total · Health '+hp+'%</div>';
+      /* Custom field table */
+      h+='<div style="font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;color:var(--tx2);margin-bottom:5px">Custom Field ClickUp aktif di list ini ('+m.fields.length+' terdeteksi)</div>';
+      if(!m.listId){
+        h+='<div class="cut-note cut-note-w">Pasang List ID di tab Pengaturan, lalu klik Detect agar field dapat terbaca dari list yang spesifik.</div>';
+      }else if(!m.fields.length){
+        h+='<div class="cut-note">Belum ada field terdeteksi untuk list ini. Klik <b>Detect</b> di atas untuk membaca field ClickUp dari list yang terpasang.</div>';
+      }else{
+        h+='<table class="cut-tbl">';
+        h+='<thead><tr><th>Field ClickUp</th><th>Tipe</th><th style="text-align:right">Field ID</th><th>Cocok AJW</th></tr></thead><tbody>';
+        m.fields.slice(0,25).forEach(function(f){
+          var fn=fnorm(f.name||'');
+          var hit=m.ajwFields.filter(function(a){var an=fnorm(a);return fn===an||fn.indexOf(an)>=0||an.indexOf(fn)>=0||fn.split(' ').some(function(w){return w.length>2&&an.indexOf(w)>=0;});});
+          var matched=hit.length>0;
+          var ftype=String(f.type||'').replace('_',' ');
+          h+='<tr>';
+          h+='<td style="font-weight:800">'+esc(f.name||'—')+'</td>';
+          h+='<td><span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg2);border:1px solid var(--bd)">'+esc(ftype)+'</span></td>';
+          h+='<td style="text-align:right;font-family:Consolas,monospace;font-size:9px;color:var(--tx2)">'+esc((f.id||'').slice(-8))+'</td>';
+          h+='<td style="color:'+(matched?'#15803D':'var(--tx2)');+'">'+(matched?esc(hit.map(function(a){return a;}).join(', ')):'—')+'</td>';
+          h+='</tr>';
+        });
+        h+='</tbody></table>';
+        if(m.fields.length>25) h+='<div style="font-size:10px;color:var(--tx2);margin-top:4px">...dan '+(m.fields.length-25)+' field lainnya</div>';
+      }
+      h+='</div></details>';
     });
-    h+='</div>';
-
-    /* Repair & detect actions */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Pemeliharaan</span></div>';
-    h+='<div class="cu-actions"><button class="cu-btn" onclick="_clickupToolsRepairCustomFieldValues()">🔧 Repair Custom Field</button><button class="cu-btn" onclick="_clickupToolsAutoDetectAll()">🔍 Auto Detect Lists</button><button class="cu-btn" onclick="_clickupToolsMapFields()">🗂️ Auto Mapping Field</button><button class="cu-btn cu-btn-danger" onclick="_clickupLogClear()">🗑️ Bersihkan Log</button></div>';
-    h+='</div>';
   }
 
-  /* ════════════════════════════════════════
-     TAB: LOG
-  ════════════════════════════════════════ */
+  /* ══════ LOG ══════ */
   else if(view==='log'){
     var logErr=logs.filter(function(l){return l.level==='error';}).length;
     var logWarn=logs.filter(function(l){return l.level==='warn';}).length;
     var logOk=logs.filter(function(l){return l.level==='success';}).length;
     var logInfo=logs.filter(function(l){return l.level==='info';}).length;
-
-    h+='<div style="display:grid;grid-template-columns:200px 1fr;gap:12px;align-items:start">';
-
-    /* Sidebar */
+    h+='<div style="display:grid;grid-template-columns:155px 1fr;gap:10px;align-items:start">';
     h+='<div>';
-    h+='<div class="cu-section" style="margin-bottom:8px">';
-    h+='<div class="cu-section-hdr" style="margin-bottom:9px"><span class="cu-section-title">Ringkasan</span></div>';
-    h+='<div style="display:grid;gap:6px">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 9px;border-radius:7px;background:#FEF2F2"><span style="font-size:11px;font-weight:800;color:#B91C1C">Error</span><b style="font-size:14px;color:#B91C1C">'+logErr+'</b></div>';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 9px;border-radius:7px;background:#FFFBEB"><span style="font-size:11px;font-weight:800;color:#B45309">Warn</span><b style="font-size:14px;color:#B45309">'+logWarn+'</b></div>';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 9px;border-radius:7px;background:#F0FDF4"><span style="font-size:11px;font-weight:800;color:#15803D">OK</span><b style="font-size:14px;color:#15803D">'+logOk+'</b></div>';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 9px;border-radius:7px;background:#EFF6FF"><span style="font-size:11px;font-weight:800;color:#1D4ED8">Info</span><b style="font-size:14px;color:#1D4ED8">'+logInfo+'</b></div>';
-    h+='<div style="margin-top:2px;font-size:10px;color:var(--tx2)">Total '+logs.length+' entri</div>';
-    h+='</div></div>';
-    h+='<button class="cu-btn cu-btn-danger" onclick="_clickupLogClear()" style="width:100%">🗑️ Bersihkan Log</button>';
+    h+='<div class="cut-card" style="margin-bottom:7px">';
+    h+='<div class="cut-hdr" style="margin-bottom:7px"><span class="cut-hdr-t">Ringkasan</span></div>';
+    [['ERR',logErr,'#B91C1C'],['WARN',logWarn,'#B45309'],['OK',logOk,'#15803D'],['INFO',logInfo,'#64748B']].forEach(function(r){
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--bd)">';
+      h+='<span style="font-size:10px;font-weight:900;color:'+r[2]+'">'+r[0]+'</span>';
+      h+='<b style="font-size:14px;color:'+r[2]+'">'+r[1]+'</b></div>';
+    });
+    h+='<div style="font-size:10px;color:var(--tx2);margin-top:6px">'+logs.length+' entri total</div>';
     h+='</div>';
-
-    /* Log list */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Riwayat Aktivitas</span><span class="cu-section-sub">'+logs.length+' entri</span></div>';
-    h+='<div style="max-height:580px;overflow:auto;display:grid;gap:4px">';
+    h+='<div style="display:grid;gap:4px"><button class="btns" onclick="_clickupLogClear()" style="color:#B91C1C">Bersihkan Log</button><button class="btns" onclick="_clickupToolsTest()">Test Koneksi</button></div>';
+    h+='</div>';
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr"><span class="cut-hdr-t">Riwayat</span><span style="font-size:10px;color:var(--tx2)">'+logs.length+' entri</span></div>';
+    h+='<div style="max-height:580px;overflow:auto">';
     if(logs.length){
-      logs.slice(0,120).forEach(function(l){
-        var bg=l.level==='error'?'#FEF2F2':(l.level==='warn'?'#FFFBEB':(l.level==='success'?'#F0FDF4':'#F8FAFC'));
-        h+='<div class="cu-log-row" style="background:'+bg+'">';
-        h+='<span class="cu-log-lbl" style="color:'+lc(l.level)+'">'+ll(l.level)+'</span>';
-        h+='<div class="cu-log-body"><div class="cu-log-title">'+esc(l.title||'—')+'</div>';
-        if(l.detail) h+='<div class="cu-log-detail">'+esc(l.detail)+'</div>';
-        h+='</div>';
-        h+='<span class="cu-log-ts">'+esc(l.ts?new Date(l.ts).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'-')+'</span>';
-        h+='</div>';
+      logs.slice(0,200).forEach(function(l){
+        h+='<div style="display:flex;gap:7px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--bd)">';
+        h+='<span style="font-size:9px;font-weight:900;color:'+lc(l.level)+';min-width:30px;padding-top:1px">'+ll(l.level)+'</span>';
+        h+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:800;color:var(--tx)">'+esc(l.title||'—')+'</div>';
+        if(l.detail) h+='<div style="font-size:10px;color:var(--tx2);margin-top:1px;line-height:1.3;word-break:break-all">'+esc(l.detail)+'</div>';
+        h+='</div><span style="font-size:9px;color:var(--tx2);white-space:nowrap;flex-shrink:0;padding-top:1px">'+esc(l.ts?new Date(l.ts).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'-')+'</span></div>';
       });
-    }else{h+='<div style="padding:20px;text-align:center;color:var(--tx2);font-size:12px">Belum ada log aktivitas.</div>';}
+    }else{h+='<div style="padding:16px;text-align:center;color:var(--tx2);font-size:11px">Belum ada log.</div>';}
     h+='</div></div>';
-
-    h+='</div>'; /* end 2-col */
+    h+='</div>';
   }
 
-  /* ════════════════════════════════════════
-     TAB: PENGATURAN
-  ════════════════════════════════════════ */
+  /* ══════ PENGATURAN ══════ */
   else if(view==='settings'){
-    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">';
-
-    /* LEFT col */
+    h+='<div class="cut-2col">';
     h+='<div>';
 
-    /* Token section */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Token API</span>'+badge('Permanen','#15803D','#F0FDF4')+'</div>';
-    h+='<div class="cu-token-note">Gunakan <b>Personal API Token</b> dari ClickUp (Settings → Apps → API Token). Token ini tidak expire dan tidak perlu OAuth ulang — cocok untuk integrasi jangka panjang. Jangan gunakan token OAuth yang ada expiry.</div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Personal API Token</label><input id="CUT-TOKEN" type="password" class="cu-input" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="pk_xxxxxxxx... (Personal API Token ClickUp)"><div style="font-size:10px;color:var(--tx2);margin-top:3px">ClickUp → Profil → Settings → Apps → API Token</div></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Proxy API URL</label><input id="CUT-PROXY" class="cu-input" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'" placeholder="/api/clickup/proxy"></div>';
-    h+='<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--tx);margin-bottom:10px"><input id="CUT-AUTO-REPAIR" type="checkbox" '+(ck('CUT-AUTO-REPAIR',cfg.clickupAutoRepair)?'checked':'')+' onchange="_clickupToolsSaveCfg()"> Auto repair custom field tiap 30 menit</label>';
-    h+='<div style="display:flex;gap:7px"><button class="cu-btn cu-btn-primary" onclick="_clickupToolsSaveCfg()">💾 Simpan</button><button class="cu-btn" onclick="_clickupToolsTest()">📡 Test Token</button></div>';
+    /* Token */
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr"><span class="cut-hdr-t">Token API</span>'+badge('Permanen','#15803D')+'</div>';
+    h+='<div class="cut-note cut-note-w">Gunakan <b>Personal API Token</b> dari ClickUp (Settings → Apps → API Token). Token tidak expire — tidak perlu re-authorize. Hindari OAuth token yang ada batas waktu.</div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Personal API Token</label><input id="CUT-TOKEN" type="password" class="fi" value="'+escAttr(cv('CUT-TOKEN',cfg.clickupToken||''))+'" placeholder="pk_xxxxxxxx..."><div style="font-size:10px;color:var(--tx2);margin-top:2px">ClickUp → Profil → Settings → Apps → API Token</div></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Proxy API URL</label><input id="CUT-PROXY" class="fi" value="'+escAttr(cv('CUT-PROXY',cfg.clickupProxyUrl||'/api/clickup/proxy'))+'"></div>';
+    h+='<label style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;color:var(--tx);margin-bottom:9px"><input id="CUT-AUTO-REPAIR" type="checkbox" '+(ck('CUT-AUTO-REPAIR',cfg.clickupAutoRepair)?'checked':'')+' onchange="_clickupToolsSaveCfg()"> Auto repair custom field tiap 30 menit</label>';
+    h+='<div style="display:flex;gap:6px"><button class="btnp" onclick="_clickupToolsSaveCfg()">Simpan</button><button class="btns" onclick="_clickupToolsTest()">Test Token</button></div>';
     h+='</div>';
 
     /* Workspace */
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">Workspace & Status</span></div>';
-    h+='<div class="cu-3col">';
-    h+='<div class="cu-field"><label class="cu-lbl">Team / Workspace ID</label><input id="CUT-TEAM" class="cu-input" value="'+escAttr(cv('CUT-TEAM',cfg.clickupTeamId||''))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Space ID</label><input id="CUT-SPACE" class="cu-input" value="'+escAttr(cv('CUT-SPACE',cfg.clickupSpaceId||''))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Folder ID</label><input id="CUT-FOLDER" class="cu-input" value="'+escAttr(cv('CUT-FOLDER',cfg.clickupFolderId||''))+'"></div>';
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr"><span class="cut-hdr-t">Workspace & Status</span></div>';
+    h+='<div class="cut-3col">';
+    h+='<div class="cut-fld"><label class="cut-lbl">Team ID</label><input id="CUT-TEAM" class="fi" value="'+escAttr(cv('CUT-TEAM',cfg.clickupTeamId||''))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Space ID</label><input id="CUT-SPACE" class="fi" value="'+escAttr(cv('CUT-SPACE',cfg.clickupSpaceId||''))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Folder ID</label><input id="CUT-FOLDER" class="fi" value="'+escAttr(cv('CUT-FOLDER',cfg.clickupFolderId||''))+'"></div>';
     h+='</div>';
-    h+='<div class="cu-3col">';
-    h+='<div class="cu-field"><label class="cu-lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="cu-input" value="'+escAttr(cv('CUT-ST-OPEN',cfg.clickupSupplierStatusOpen||'HUTANG'))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Status Cicil</label><input id="CUT-ST-PART" class="cu-input" value="'+escAttr(cv('CUT-ST-PART',cfg.clickupSupplierStatusPartial||'CICIL'))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Status Lunas</label><input id="CUT-ST-PAID" class="cu-input" value="'+escAttr(cv('CUT-ST-PAID',cfg.clickupSupplierStatusPaid||'LUNAS'))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Status Pendapatan Done</label><input id="CUT-INCOME-DONE" class="cu-input" value="'+escAttr(cv('CUT-INCOME-DONE',cfg.clickupIncomeStatusDone||'DONE'))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Status Payroll Done</label><input id="CUT-PAYROLL-DONE" class="cu-input" value="'+escAttr(cv('CUT-PAYROLL-DONE',cfg.clickupPayrollStatusDone||'DONE'))+'"></div>';
-    h+='</div>';
-    h+='</div>';
+    h+='<div class="cut-3col">';
+    h+='<div class="cut-fld"><label class="cut-lbl">Status Hutang</label><input id="CUT-ST-OPEN" class="fi" value="'+escAttr(cv('CUT-ST-OPEN',cfg.clickupSupplierStatusOpen||'HUTANG'))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Status Cicil</label><input id="CUT-ST-PART" class="fi" value="'+escAttr(cv('CUT-ST-PART',cfg.clickupSupplierStatusPartial||'CICIL'))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Status Lunas</label><input id="CUT-ST-PAID" class="fi" value="'+escAttr(cv('CUT-ST-PAID',cfg.clickupSupplierStatusPaid||'LUNAS'))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Income Done</label><input id="CUT-INCOME-DONE" class="fi" value="'+escAttr(cv('CUT-INCOME-DONE',cfg.clickupIncomeStatusDone||'DONE'))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Payroll Done</label><input id="CUT-PAYROLL-DONE" class="fi" value="'+escAttr(cv('CUT-PAYROLL-DONE',cfg.clickupPayrollStatusDone||'DONE'))+'"></div>';
+    h+='</div></div>';
 
-    /* OAuth (collapsed) */
-    h+='<details class="cu-det">';
-    h+='<summary><b>OAuth App (Opsional)</b><span>Gunakan Personal API Token di atas — OAuth tidak perlu</span></summary>';
-    h+='<div class="cu-det-body" onclick="event.stopPropagation()" style="padding-top:11px">';
-    h+='<div style="background:#FFF7ED;border:1px solid #FDE68A;border-radius:7px;padding:8px 10px;font-size:10px;color:#92400E;margin-bottom:10px">OAuth token expire secara berkala dan perlu di-authorize ulang. Untuk integrasi permanen, gunakan Personal API Token di atas.</div>';
-    h+='<div class="cu-2col">';
-    h+='<div class="cu-field"><label class="cu-lbl">Client ID</label><input id="CUT-CLIENT-ID" class="cu-input" value="'+escAttr(cv('CUT-CLIENT-ID',cfg.clickupClientId||''))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="cu-input" value="'+escAttr(cv('CUT-CLIENT-SECRET',cfg.clickupClientSecret||''))+'"></div>';
-    h+='</div>';
-    h+='<div class="cu-field"><label class="cu-lbl">Redirect URI</label><input id="CUT-REDIRECT" class="cu-input" value="'+escAttr(cv('CUT-REDIRECT',cfg.clickupRedirectUri||location.href.split('#')[0]))+'"></div>';
-    h+='<div class="cu-field"><label class="cu-lbl">OAuth Code</label><input id="CUT-CODE" class="cu-input" value="'+escAttr(cv('CUT-CODE',''))+'" placeholder="Tempel code dari URL redirect"></div>';
-    h+='<div style="display:flex;gap:7px"><button class="cu-btn" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="cu-btn" onclick="_clickupToolsExchangeCode()">Tukar Code → Token</button></div>';
+    /* OAuth collapsed */
+    h+='<details class="cut-acrd">';
+    h+='<summary><span style="font-weight:900;flex:1;font-size:11px">OAuth App</span><span style="font-size:10px;color:var(--tx2)">Tidak disarankan — gunakan Personal API Token</span></summary>';
+    h+='<div class="cut-acrd-body">';
+    h+='<div class="cut-note cut-note-w">OAuth token expire dan perlu re-authorize. Untuk integrasi permanen, gunakan Personal API Token.</div>';
+    h+='<div class="cut-2col"><div class="cut-fld"><label class="cut-lbl">Client ID</label><input id="CUT-CLIENT-ID" class="fi" value="'+escAttr(cv('CUT-CLIENT-ID',cfg.clickupClientId||''))+'"></div><div class="cut-fld"><label class="cut-lbl">Client Secret</label><input id="CUT-CLIENT-SECRET" type="password" class="fi" value="'+escAttr(cv('CUT-CLIENT-SECRET',cfg.clickupClientSecret||''))+'"></div></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">Redirect URI</label><input id="CUT-REDIRECT" class="fi" value="'+escAttr(cv('CUT-REDIRECT',cfg.clickupRedirectUri||location.href.split('#')[0]))+'"></div>';
+    h+='<div class="cut-fld"><label class="cut-lbl">OAuth Code</label><input id="CUT-CODE" class="fi" value="'+escAttr(cv('CUT-CODE',''))+'" placeholder="Tempel code dari URL redirect"></div>';
+    h+='<div style="display:flex;gap:6px"><button class="btns" onclick="_clickupToolsAuthUrl()">Buka Authorize</button><button class="btns" onclick="_clickupToolsExchangeCode()">Tukar Code</button></div>';
     h+='</div></details>';
 
-    h+='</div>'; /* end left col */
+    h+='</div>'; /* end left */
 
-    /* RIGHT col — List IDs */
+    /* Right — list IDs */
     h+='<div>';
-    h+='<div class="cu-section">';
-    h+='<div class="cu-section-hdr"><span class="cu-section-title">List ID Per Modul</span><button class="cu-btn cu-btn-sm" onclick="_clickupToolsAutoDetectAll()">🔍 Auto Detect</button></div>';
-    h+='<div style="font-size:10px;color:var(--tx2);margin-bottom:10px">Tempel URL list ClickUp atau ID langsung. Tekan Simpan untuk menyimpan dan auto-map semua modul.</div>';
+    h+='<div class="cut-card">';
+    h+='<div class="cut-hdr"><span class="cut-hdr-t">List ID Per Modul</span><button class="btnsm" onclick="_clickupToolsAutoDetectAll()">Auto Detect</button></div>';
+    h+='<div style="font-size:10px;color:var(--tx2);margin-bottom:9px">Tempel URL atau ID list ClickUp. Detect akan membaca field hanya dari list yang terpasang di setiap modul.</div>';
     mods.forEach(function(m){
       var val=cv(m.listInput,m.listId||((maps[m.listKey]||{}).id)||'');
-      h+='<div class="cu-field">';
-      h+='<label class="cu-lbl"><span style="margin-right:5px">'+m.icon+'</span>'+m.label+' '+statBadge(m.synced,m.total,m.queue,m.failed)+'</label>';
-      h+='<div style="display:flex;gap:5px"><input id="'+m.listInput+'" class="cu-input" value="'+escAttr(val)+'" placeholder="URL atau ID list '+m.label+'" style="flex:1"><button class="cu-btn cu-btn-sm" onclick="_clickupToolsAssignList(\''+m.listKey+'\',document.getElementById(\''+m.listInput+'\').value)">Set</button></div>';
-      if(m.listId) h+='<div style="font-size:10px;color:#15803D;margin-top:2px">✓ Terpasang: '+esc(m.listId)+'</div>';
-      h+='</div>';
+      var sc=stColor(m.synced,m.total,m.queue,m.failed), sl=stLabel(m.synced,m.total,m.queue,m.failed);
+      h+='<div class="cut-fld"><label class="cut-lbl">'+esc(m.label)+' '+badge(sl,sc)+'</label>';
+      h+='<div style="display:flex;gap:5px"><input id="'+m.listInput+'" class="fi" value="'+escAttr(val)+'" placeholder="URL atau ID list" style="flex:1"><button class="btnsm" onclick="_clickupToolsAssignList(\''+m.listKey+'\',document.getElementById(\''+m.listInput+'\').value)">Set</button></div>';
+      h+='<div style="font-size:9px;margin-top:2px;color:'+(m.listId?'#15803D':'#B91C1C')+'">'+(m.listId?'Terpasang: '+esc(m.listId):'Belum dipasang')+'</div></div>';
     });
-    h+='<div style="display:flex;gap:7px;margin-top:4px"><button class="cu-btn cu-btn-primary" onclick="_clickupToolsSaveCfg()" style="flex:1">💾 Simpan Semua</button><button class="cu-btn" onclick="_clickupToolsMapFields()">🗂️ Auto Map Field</button></div>';
+    h+='<div style="display:flex;gap:6px;margin-top:2px"><button class="btnp" onclick="_clickupToolsSaveCfg()" style="flex:1">Simpan Semua</button><button class="btns" onclick="_clickupToolsMapFields()">Auto Map Field</button></div>';
     h+='</div>';
-
-    /* Detected lists */
     if(lists.length){
-      h+='<div class="cu-section">';
-      h+='<div class="cu-section-hdr"><span class="cu-section-title">List Terdeteksi</span><span class="cu-section-sub">'+lists.length+' list</span></div>';
-      h+='<div style="max-height:340px;overflow:auto;display:grid;gap:6px">';
-      lists.slice(0,80).forEach(function(l){
-        h+='<div style="padding:8px 10px;border:1px solid var(--bd);border-radius:7px;background:var(--bg)">';
-        h+='<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap">';
-        h+='<div><b style="font-size:11px;color:var(--tx)">'+esc(l.name||'—')+'</b><div style="font-size:9px;color:var(--tx2);font-family:Consolas,monospace;margin-top:2px">'+esc(l.id||'')+'</div></div>';
-        h+='<div style="display:flex;gap:3px;flex-wrap:wrap">';
-        mods.forEach(function(m){h+='<button class="cu-btn cu-btn-sm" onclick="_clickupToolsAssignList(\''+m.listKey+'\',\''+escAttr(l.id)+'\')">'+m.label.split(' ')[0]+'</button>';});
+      h+='<div class="cut-card">';
+      h+='<div class="cut-hdr"><span class="cut-hdr-t">List Terdeteksi</span><span style="font-size:10px;color:var(--tx2)">'+lists.length+' list</span></div>';
+      h+='<div style="max-height:300px;overflow:auto">';
+      lists.slice(0,60).forEach(function(l){
+        h+='<div style="padding:5px 0;border-bottom:1px solid var(--bd)">';
+        h+='<div style="display:flex;justify-content:space-between;gap:7px;align-items:flex-start;flex-wrap:wrap">';
+        h+='<div><div style="font-size:11px;font-weight:800;color:var(--tx)">'+esc(l.name||'—')+'</div><div style="font-size:9px;color:var(--tx2);font-family:Consolas,monospace">'+esc(l.id||'')+'</div></div>';
+        h+='<div style="display:flex;gap:2px;flex-wrap:wrap">';
+        mods.forEach(function(m){h+='<button class="btnsm" onclick="_clickupToolsAssignList(\''+m.listKey+'\',\''+escAttr(l.id)+'\')">'+esc(m.label.split(' ')[0])+'</button>';});
         h+='</div></div></div>';
       });
       h+='</div></div>';
     }
-
-    h+='</div>'; /* end right col */
-    h+='</div>'; /* end 2-col grid */
+    h+='</div>'; /* end right */
+    h+='</div>'; /* end 2col */
   }
 
-  h+='</div>'; /* end cu-wrap */
+  h+='</div>';
   return h;
 }
 
