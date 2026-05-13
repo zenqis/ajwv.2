@@ -5,7 +5,15 @@ import { AJW_NEON_POST_SCHEMA_SQL, AJW_NEON_TABLES } from "../../scripts/ajw-neo
 dotenv.config();
 dotenv.config({ path: ".env.neon-migration", override: false });
 
-const databaseUrl = String(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || "").trim();
+const databaseUrl = String(
+  process.env.DATABASE_URL ||
+    process.env.NEON_DATABASE_URL ||
+    process.env.DATABASE_URL_UNPOOLED ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    ""
+).trim();
 const pool = databaseUrl
   ? new Pool({
       connectionString: databaseUrl,
