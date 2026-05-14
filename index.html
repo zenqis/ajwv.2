@@ -6639,23 +6639,49 @@ function _toolsDescCommitImport(){
   });
   if(!mapped.length){toast('Tidak ada baris dengan kode produk yang valid','error');return;}
   if(mode==='update'){
+    /* ── MERGE COLUMNS: keep existing cols, add only new ones ── */
+    var existingCols=window._toolDescCols||[];
+    var existingColKeys={};
+    existingCols.forEach(function(c){existingColKeys[c.srcCol]=true;});
+    var brandNewCols=selectedCols.filter(function(c){return !existingColKeys[c];});
+    window._toolDescCols=existingCols.concat(brandNewCols.map(function(c){
+      return {srcCol:c,label:c,aiLabel:c+' Terbaru'};
+    }));
+    /* ── MERGE ROWS: group existing by productCode (support variations) ── */
     var existing=(_toolDescRows||[]).slice();
-    var byCode={};
-    existing.forEach(function(r){byCode[r.productCode]=r;});
-    var added=0;
+    var byCode={}; /* productCode → [row, row, ...] */
+    existing.forEach(function(r){
+      if(!byCode[r.productCode])byCode[r.productCode]=[];
+      byCode[r.productCode].push(r);
+    });
+    var added=0, updated=0;
     mapped.forEach(function(nr){
-      if(byCode[nr.productCode]){
-        var ex=byCode[nr.productCode];
-        ex._data=nr._data; ex._ai=ex._ai||{}; selectedCols.forEach(function(c){if(!ex._ai[c])ex._ai[c]='';});
-        ex.productName=nr.productName; ex.oldDescription=nr.oldDescription; ex.updatedAt=isoNow();
-        if(ex.status==='error')ex.status='ready';
+      var grp=byCode[nr.productCode];
+      if(grp&&grp.length){
+        /* Update all existing rows for this productCode (variations):
+           add new _data fields, keep old _data fields */
+        grp.forEach(function(ex){
+          if(!ex._data)ex._data={};
+          if(!ex._ai)ex._ai={};
+          brandNewCols.forEach(function(c){
+            ex._data[c]=nr._data[c]||'';
+            ex._ai[c]='';
+          });
+          ex.updatedAt=isoNow();
+        });
+        updated++;
       }else{
-        existing.push(nr); byCode[nr.productCode]=nr; added++;
+        /* New productCode — add variation row(s) */
+        if(!nr._ai)nr._ai={};
+        existingCols.forEach(function(c){if(!(c.srcCol in nr._data))nr._data[c.srcCol]='';if(!(c.srcCol in nr._ai))nr._ai[c.srcCol]='';});
+        existing.push(nr);
+        byCode[nr.productCode]=[nr];
+        added++;
       }
     });
     _toolDescRows=existing;
-    toast('Import Update selesai: '+mapped.length+' baris dicocokkan, '+added+' baris baru ditambahkan','success',4800);
-    _toolsDescAddHistory('import-update','Import Update dari '+fileName+' ('+mapped.length+' baris, +'+added+' baru)',mapped.length);
+    toast('Import Update: '+updated+' kode diperbarui, '+added+' baru ditambahkan, '+brandNewCols.length+' kolom baru','success',5200);
+    _toolsDescAddHistory('import-update','Import Update dari '+fileName,mapped.length);
   }else{
     _toolDescRows=mapped;
     toast('Import berhasil: '+mapped.length+' baris dari '+fileName,'success',4200);
@@ -6858,6 +6884,18 @@ function _toolsDescGenerateOne(id, quiet){
       row.status='done';
       row.error='';
       row.updatedAt=isoNow();
+      /* propagate AI result to all sibling rows (same productCode = variations) */
+      if(row.productCode){
+        (_toolDescRows||[]).forEach(function(sib){
+          if(sib.id!==row.id&&sib.productCode===row.productCode){
+            sib.newTitle=row.newTitle;
+            sib.newDescription=row.newDescription;
+            if(row._ai){sib._ai=sib._ai||{};Object.keys(row._ai).forEach(function(k){sib._ai[k]=row._ai[k];});}
+            sib.status='done';
+            sib.updatedAt=isoNow();
+          }
+        });
+      }
       _toolsSave();
       if(!quiet) toast('Judul & deskripsi berhasil direvisi','success');
       if(window._toolsSub==='desc') _renderTools('desc');
@@ -6880,7 +6918,16 @@ function _toolsDescRunFrom(index){
   _toolDescRunState={running:true,startIndex:index||0};
   if(!index){ window._toolDescStartTime=Date.now(); window._toolDescEndTime=null; }
   var i=index||0;
+  var _doneByCode={}; /* productCode → true: already generated in this run */
+  /* pre-seed with codes already done before this run started */
+  rows.forEach(function(r){if(r.status==='done'&&r.productCode)_doneByCode[r.productCode]=true;});
   function step(){
+    if(!_toolDescRunState.running){
+      window._toolDescEndTime=Date.now();
+      clearInterval(window._toolDescTimerIv);
+      _renderTools('desc');
+      return;
+    }
     if(i>=rows.length){
       _toolDescRunState.running=false;
       window._toolDescEndTime=Date.now();
@@ -6893,8 +6940,15 @@ function _toolsDescRunFrom(index){
       return;
     }
     var row=rows[i];
-    if(!row){ i++; return step(); }
+    if(!row||row.status==='done'||row.status==='running'){ i++; return step(); }
+    /* skip variations: if this productCode was already generated in this run,
+       the propagation in generateOne already filled siblings → mark done & skip */
+    if(row.productCode&&_doneByCode[row.productCode]){
+      if(row.status!=='done'){row.status='done';row.updatedAt=isoNow();}
+      i++; return step();
+    }
     _toolsDescGenerateOne(row.id,true).finally(function(){
+      if(row.productCode)_doneByCode[row.productCode]=true;
       i+=1;
       setTimeout(step, 350);
     });
