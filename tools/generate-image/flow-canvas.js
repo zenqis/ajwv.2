@@ -65,7 +65,7 @@ var NODE_DEFS={
     inputs:[{id:'image',type:'image',label:'image (opt)'},
             {id:'prompt',type:'prompt',label:'prompt'}],
     outputs:[{id:'image',type:'image[]',label:'image'}],
-    defaultData:function(){ return {model:'gpt-image-1',size:'1024x1024',quality:'medium',status:'idle',result:null}; }
+    defaultData:function(){ return {model:'gpt-image-2',size:'1024x1024',quality:'medium',status:'idle',result:null}; }
   },
   'output':{
     label:'Output / Preview',
@@ -286,6 +286,7 @@ function renderGenerateBody(node){
     '<div style="display:flex;gap:4px;align-items:center">'+
     '<span style="font-size:10px;color:#888;width:46px">Model</span>'+
     '<select data-genfield="'+node.id+'" data-field="model" style="'+selectStyle()+'flex:1">'+
+    '<option value="gpt-image-2" '+(node.data.model==='gpt-image-2'?'selected':'')+'>gpt-image-2</option>'+
     '<option value="gpt-image-1" '+(node.data.model==='gpt-image-1'?'selected':'')+'>gpt-image-1</option>'+
     '</select></div>'+
     '<div style="display:flex;gap:4px;align-items:center">'+
