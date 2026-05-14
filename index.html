@@ -5051,13 +5051,28 @@ function _toolsDescPromptValue(){
 function _toolsDescSavePrompt(){
   _toolDescPrompt=_toolsTextarea('TOOL-DESC-PROMPT')||'';
   _toolsSave();
-  toast('Prompt revisi deskripsi disimpan','success');
+  toast('Prompt disimpan','success');
+  if(typeof closeModal==='function') closeModal();
 }
 function _toolsDescResetPrompt(){
   _toolDescPrompt='';
   _toolsSave();
   var el=document.getElementById('TOOL-DESC-PROMPT'); if(el) el.value=_toolsDescDefaultPrompt();
   toast('Prompt default dipulihkan','success');
+}
+function _toolsDescOpenPromptModal(){
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">';
+  html+='<div style="font-size:12px;color:var(--tx2)">Prompt ini dikirim ke AI sebelum data produk saat generate deskripsi.</div>';
+  html+='<div style="display:flex;gap:8px;flex-shrink:0"><button class="btns" onclick="_toolsDescResetPrompt()">Default</button><button class="btnp" onclick="_toolsDescSavePrompt()">Simpan</button></div>';
+  html+='</div>';
+  html+='<textarea id="TOOL-DESC-PROMPT" class="fi" rows="20" style="line-height:1.55;font-size:12px">'+esc(_toolsDescPromptValue())+'</textarea>';
+  openModal('Edit Prompt AI', html);
+}
+function _toolsDescAction(id,action,idx){
+  if(action==='preview') _toolsDescOpenPreview(id);
+  else if(action==='gen') _toolsDescGenerateOne(id);
+  else if(action==='from') _toolsDescRunFrom(idx);
+  else if(action==='del') _toolsDescDelete(id);
 }
 function _toolsDescEnsureXLSX(done){
   if(window.XLSX){ done(true); return; }
@@ -6562,10 +6577,30 @@ function _toolsDescRunFrom(index){
 function _toolsDescOpenPreview(id){
   var row=(_toolDescRows||[]).filter(function(r){ return r.id===id; })[0];
   if(!row){ toast('Baris tidak ditemukan','error'); return; }
-  var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><div style="font-size:12px;font-weight:800;color:#fff;margin-bottom:8px">Deskripsi Asli</div><textarea id="TOOL-DESC-EDIT-OLD" class="fi" rows="18" oninput="_toolsDescSetField(\''+id+'\',\'oldDescription\')">'+esc(row.oldDescription||'')+'</textarea></div><div><div style="font-size:12px;font-weight:800;color:#fff;margin-bottom:8px">Deskripsi Terbaru</div><textarea id="TOOL-DESC-EDIT-NEW" class="fi" rows="18" oninput="_toolsDescSetField(\''+id+'\',\'newDescription\')">'+esc(row.newDescription||'')+'</textarea></div></div>';
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px"><div><label class="lbl">Kode Produk</label><input id="TOOL-DESC-EDIT-CODE" class="fi" value="'+esc(row.productCode||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productCode\')"></div><div><label class="lbl">Nama Produk</label><input id="TOOL-DESC-EDIT-NAME" class="fi" value="'+esc(row.productName||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productName\')"></div></div>';
-  html+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btns" onclick="_toolsCopy(document.getElementById(\'TOOL-DESC-EDIT-NEW\').value,\'Deskripsi terbaru\')">Salin Hasil</button><button class="btnp" onclick="_toolsDescGenerateOne(\''+id+'\')">Generate Ulang</button></div>';
-  openModal('Preview Revisi Deskripsi', html);
+  var oldLen=String(row.oldDescription||'').length, newLen=String(row.newDescription||'').length;
+  var html='';
+  /* product meta bar */
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
+  html+='<div><label class="lbl">Kode Produk</label><input id="TOOL-DESC-EDIT-CODE" class="fi" value="'+esc(row.productCode||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productCode\')"></div>';
+  html+='<div><label class="lbl">Nama Produk</label><input id="TOOL-DESC-EDIT-NAME" class="fi" value="'+esc(row.productName||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productName\')"></div>';
+  html+='</div>';
+  /* side-by-side comparison */
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  html+='<div>';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--tx)">Deskripsi Asli</span><span style="font-size:10px;color:var(--tx2)">'+oldLen+' karakter</span></div>';
+  html+='<textarea id="TOOL-DESC-EDIT-OLD" class="fi" rows="18" style="line-height:1.55;font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'oldDescription\')">'+esc(row.oldDescription||'')+'</textarea>';
+  html+='</div>';
+  html+='<div>';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#6ee7b7">Deskripsi Terbaru</span><span style="font-size:10px;color:var(--tx2)">'+newLen+' karakter'+(newLen&&oldLen?' • '+(newLen>oldLen?'+':'')+String(newLen-oldLen):'')+'</span></div>';
+  html+='<textarea id="TOOL-DESC-EDIT-NEW" class="fi" rows="18" style="line-height:1.55;font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'newDescription\')">'+esc(row.newDescription||'')+'</textarea>';
+  html+='</div>';
+  html+='</div>';
+  /* actions */
+  html+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">';
+  html+='<button class="btns" onclick="_toolsCopy(document.getElementById(\'TOOL-DESC-EDIT-NEW\').value,\'Deskripsi terbaru\')">Salin Hasil</button>';
+  html+='<button class="btnp" onclick="_toolsDescGenerateOne(\''+id+'\')">Generate Ulang</button>';
+  html+='</div>';
+  openModal('Perbandingan Deskripsi — '+esc(row.productName||row.productCode||'-'), html);
 }
 function _toolsBlastDefaultTemplate(){
   return [
@@ -9165,22 +9200,70 @@ function _renderTools(sub){
     var rows=_toolDescRows||[];
     var doneCount=rows.filter(function(r){ return r.status==='done'; }).length;
     var errCount=rows.filter(function(r){ return r.status==='error'; }).length;
-    var readyCount=rows.filter(function(r){ return r.status!=='done'; }).length;
+    var readyCount=rows.filter(function(r){ return r.status==='ready'; }).length;
+    var runCount=rows.filter(function(r){ return r.status==='running'; }).length;
+    var isRunning=!!_toolDescRunState.running;
+    var pct=rows.length>0?Math.min(100,Math.round(doneCount/rows.length*100)):0;
+    var curRunRow=rows.filter(function(r){ return r.status==='running'; })[0];
     var desc='';
-    desc+='<div class="card" style="margin-bottom:12px;background:#090909;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:800;color:#fff">Revisi Deskripsi Produk</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Import file Excel/CSV berisi kode produk, nama produk, dan deskripsi produk. AJW akan menjaga struktur kolom asli, lalu menghasilkan kolom deskripsi terbaru dengan AI per baris secara berurutan.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btns" onclick="_toolsDescDownloadTemplate()">Download Template Excel</button><button class="btns" onclick="_toolsDescImportFile()">Import Excel / CSV</button><button class="btnp" onclick="_toolsDescExportResults()">Export Excel Hasil</button></div></div>';
-    desc+='<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px">';
-    [['Total Baris',rows.length,'#8FD0FF'],['Selesai',doneCount,'#A7F3B6'],['Error',errCount,'#FF8A80'],['Siap / Pending',readyCount,'#F0C56A']].forEach(function(it){
-      desc+='<div style="padding:10px 12px;border-radius:12px;background:#050505;border:1px solid rgba(255,255,255,.07)"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.65)">'+it[0]+'</div><div style="font-size:26px;font-weight:900;color:'+it[2]+';margin-top:6px">'+it[1]+'</div></div>';
+
+    /* ─── header ─── */
+    desc+='<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">';
+    desc+='<div><div style="font-size:14px;font-weight:800;color:var(--tx)">Revisi Deskripsi Produk</div>';
+    desc+='<div style="font-size:11px;color:var(--tx2);margin-top:3px">Import Excel/CSV berisi kode, nama, dan deskripsi produk — AI menghasilkan deskripsi baru per baris secara berurutan.</div></div>';
+    desc+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
+    desc+='<button class="btns" onclick="_toolsDescImportFile()">Import</button>';
+    desc+='<button class="btns" onclick="_toolsDescExportResults()">Export Hasil</button>';
+    desc+='</div></div></div>';
+
+    /* ─── stats + progress ─── */
+    desc+='<div class="card" style="margin-bottom:12px">';
+    desc+='<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px">';
+    [['Total',rows.length,'var(--tx)'],['Selesai',doneCount,'#6ee7b7'],['Error',errCount,'#f87171'],['Pending',readyCount,'#fbbf24']].forEach(function(it){
+      desc+='<div style="padding:10px 12px;border-radius:8px;border:1px solid var(--br)"><div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--tx2)">'+it[0]+'</div><div style="font-size:22px;font-weight:900;color:'+it[2]+';margin-top:4px">'+it[1]+'</div></div>';
     });
+    desc+='</div>';
+    desc+='<div style="display:flex;align-items:center;gap:10px">';
+    desc+='<div style="flex:1;height:5px;border-radius:3px;background:var(--br);overflow:hidden"><div style="height:100%;border-radius:3px;background:linear-gradient(90deg,#6ee7b7,#3b82f6);width:'+pct+'%;transition:width .5s"></div></div>';
+    desc+='<div style="font-size:11px;color:var(--tx2);white-space:nowrap">'+(isRunning?'<span style="color:#fbbf24">Memproses…</span>':'<span>'+pct+'% selesai</span>')+'</div>';
+    desc+='</div>';
+    if(curRunRow) desc+='<div style="font-size:11px;color:var(--tx2);margin-top:5px">▸ '+esc(curRunRow.productName||curRunRow.productCode||'-')+'</div>';
+    desc+='</div>';
+
+    /* ─── table card ─── */
+    desc+='<div class="card">';
+    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">';
+    desc+='<div style="font-size:13px;font-weight:800;color:var(--tx)">Daftar Revisi</div>';
+    desc+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    desc+='<button class="btns" onclick="_toolsDescOpenPromptModal()">Edit Prompt AI</button>';
+    desc+='<button class="btns" onclick="_toolsDescRunFrom(0)"'+(isRunning?' disabled':'')+'>Generate Semua</button>';
+    desc+='<button class="btnsm" onclick="confirmDelete(\'Kosongkan semua data revisi deskripsi?\',function(){_toolDescRows=[];_toolsSave();_renderTools(\'desc\')})">Kosongkan</button>';
     desc+='</div></div>';
-    desc+='<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-size:13px;font-weight:800;color:#fff">Prompt Revisi Deskripsi</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btns" onclick="_toolsDescResetPrompt()">Gunakan Default</button><button class="btnp" onclick="_toolsDescSavePrompt()">Simpan Prompt</button></div></div><textarea id="TOOL-DESC-PROMPT" class="fi" rows="18" style="margin-top:10px;line-height:1.55">'+esc(_toolsDescPromptValue())+'</textarea></div>';
-    desc+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:13px;font-weight:800;color:#fff">Daftar Revisi Deskripsi</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Generate bisa per baris atau berantai dari baris tertentu sampai ke bawah.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btns" onclick="_toolsDescRunFrom(0)"'+(_toolDescRunState.running?' disabled':'')+'>Generate Semua</button><button class="btnsm" onclick="confirmDelete(\'Kosongkan semua data revisi deskripsi?\',function(){_toolDescRows=[];_toolsSave();_renderTools(\'desc\')})">Kosongkan</button></div></div>';
-    desc+='<div style="overflow:auto"><table class="tbl"><thead><tr><th style="width:46px">No</th><th>Kode Produk</th><th>Nama Produk</th><th>Deskripsi Produk</th><th>Deskripsi Terbaru</th><th>Status</th><th>Aksi</th></tr></thead><tbody>';
-    if(!rows.length) desc+='<tr><td colspan="7" style="text-align:center;color:var(--tx2)">Belum ada data. Import file template dulu untuk mulai revisi.</td></tr>';
+    desc+='<div style="overflow:auto"><table class="tbl"><thead><tr>';
+    desc+='<th style="width:36px">No</th><th>Produk</th><th style="width:88px">Status</th><th style="width:108px">Aksi</th>';
+    desc+='</tr></thead><tbody>';
+    if(!rows.length){
+      desc+='<tr><td colspan="4" style="text-align:center;color:var(--tx2);padding:24px 0">Belum ada data. Import file template dulu untuk memulai revisi.</td></tr>';
+    }
     rows.forEach(function(r,idx){
-      var statusLabel=r.status==='done'?'Selesai':(r.status==='running'?'Memproses':(r.status==='error'?'Error':'Siap'));
-      var statusColor=r.status==='done'?'#A7F3B6':(r.status==='running'?'#8FD0FF':(r.status==='error'?'#FF8A80':'#F0C56A'));
-      desc+='<tr><td>'+ (idx+1) +'</td><td style="font-weight:700">'+esc(r.productCode||'-')+'</td><td>'+esc(r.productName||'-')+'</td><td style="max-width:320px"><div style="max-height:110px;overflow:auto;white-space:pre-wrap;line-height:1.45">'+esc((r.oldDescription||'-').slice(0,250))+(String(r.oldDescription||'').length>250?'...':'')+'</div></td><td style="max-width:340px"><div style="max-height:110px;overflow:auto;white-space:pre-wrap;line-height:1.45">'+esc((r.newDescription||'-').slice(0,250))+(String(r.newDescription||'').length>250?'...':'')+'</div></td><td><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:'+statusColor+'">'+statusLabel+'</span>'+(r.error?'<div style="font-size:10px;color:#FF8A80;margin-top:4px;max-width:160px">'+esc(r.error)+'</div>':'')+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btnsm" onclick="_toolsDescOpenPreview(\''+r.id+'\')">Preview</button><button class="btnsm" onclick="_toolsDescGenerateOne(\''+r.id+'\')">Generate</button><button class="btnsm" onclick="_toolsDescRunFrom('+(idx)+')">Lanjut Bawah</button><button class="btnsm" onclick="_toolsDescDelete(\''+r.id+'\')">Hapus</button></div></td></tr>';
+      var sLabel=r.status==='done'?'Selesai':(r.status==='running'?'Memproses':(r.status==='error'?'Error':'Siap'));
+      var sColor=r.status==='done'?'#6ee7b7':(r.status==='running'?'#60a5fa':(r.status==='error'?'#f87171':'#fbbf24'));
+      desc+='<tr>';
+      desc+='<td style="font-size:11px;color:var(--tx2)">'+(idx+1)+'</td>';
+      desc+='<td><div style="font-size:12px;font-weight:700">'+esc(r.productName||'-')+'</div>';
+      desc+='<div style="font-size:10px;color:var(--tx2)">'+esc(r.productCode||'-')+'</div>';
+      if(r.error) desc+='<div style="font-size:10px;color:#f87171;margin-top:2px;max-width:260px">'+esc(r.error)+'</div>';
+      desc+='</td>';
+      desc+='<td><span style="font-size:11px;font-weight:700;color:'+sColor+'">'+sLabel+'</span></td>';
+      desc+='<td><select class="fi" style="padding:3px 6px;font-size:11px" onchange="_toolsDescAction(\''+r.id+'\',this.value,'+idx+');this.value=\'\'">';
+      desc+='<option value="">Pilih…</option>';
+      desc+='<option value="preview">Preview</option>';
+      desc+='<option value="gen">Generate</option>';
+      desc+='<option value="from">Lanjut dari sini</option>';
+      desc+='<option value="del">Hapus</option>';
+      desc+='</select></td>';
+      desc+='</tr>';
     });
     desc+='</tbody></table></div></div>';
     content.innerHTML=desc;
