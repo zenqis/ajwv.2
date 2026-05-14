@@ -768,7 +768,6 @@ function renderSourceUI(root){
       '<span style="font-size:13px;font-weight:800;color:#111827;flex:1">📁 '+esc(f.name)+'</span>'+
       '<span style="font-size:11px;color:#9ca3af">'+f.images.length+' gambar</span>'+
       '<button data-uploadfolder="'+esc(f.id)+'" style="background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd;border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-weight:700">+ Upload</button>'+
-      '<input type="file" id="srcf-'+f.id+'" accept="image/*" multiple style="display:none">'+
       '<button data-delfolder="'+esc(f.id)+'" style="background:#fff5f5;color:#dc2626;border:1px solid #fecaca;border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer">🗑</button>'+
       '</div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
@@ -787,27 +786,39 @@ function renderSourceUI(root){
 
   /* new folder */
   root.querySelector('#src-newfolder').addEventListener('click',function(){
-    var name=prompt('Nama folder:','Folder '+(lib.folders.length+1));
+    var freshLib=srcGet();
+    var name=prompt('Nama folder:','Folder '+(freshLib.folders.length+1));
     if(!name||!name.trim())return;
-    lib.folders.push({id:uid(),name:name.trim(),images:[]});
-    srcSet(lib);renderSourceUI(root);
+    freshLib.folders.push({id:uid(),name:name.trim(),images:[]});
+    srcSet(freshLib);renderSourceUI(root);
   });
 
-  /* upload images to folder */
+  /* upload images to folder — use dynamic file input (most reliable) */
   root.querySelectorAll('[data-uploadfolder]').forEach(function(btn){
-    var fid=btn.getAttribute('data-uploadfolder');
-    btn.addEventListener('click',function(){document.getElementById('srcf-'+fid).click();});
-  });
-  root.querySelectorAll('input[id^="srcf-"]').forEach(function(fi){
-    fi.addEventListener('change',function(){
-      var fid=fi.id.replace('srcf-','');
-      var fl2=lib.folders.find(function(f){return f.id===fid;});if(!fl2)return;
-      var arr=Array.prototype.slice.call(fi.files),pend=arr.length;
-      arr.forEach(function(f){
-        var r=new FileReader();
-        r.onload=function(ev){fl2.images.push({id:uid(),name:f.name,dataUrl:ev.target.result});if(--pend===0){srcSet(lib);renderSourceUI(root);}};
-        r.readAsDataURL(f);
+    btn.addEventListener('click',function(){
+      var fid=btn.getAttribute('data-uploadfolder');
+      var fi=document.createElement('input');
+      fi.type='file'; fi.accept='image/*'; fi.multiple=true;
+      fi.style.cssText='position:fixed;top:-9999px;left:-9999px;opacity:0;width:1px;height:1px;';
+      document.body.appendChild(fi);
+      fi.addEventListener('change',function(){
+        var arr=Array.prototype.slice.call(fi.files);
+        if(!arr.length){fi.remove();return;}
+        /* re-read lib fresh to avoid stale data */
+        var freshLib=srcGet();
+        var fl2=freshLib.folders.find(function(f){return f.id===fid;});
+        if(!fl2){fi.remove();return;}
+        var pend=arr.length;
+        arr.forEach(function(file){
+          var r=new FileReader();
+          r.onload=function(ev){
+            fl2.images.push({id:uid(),name:file.name,dataUrl:ev.target.result});
+            if(--pend===0){srcSet(freshLib);fi.remove();renderSourceUI(root);}
+          };
+          r.readAsDataURL(file);
+        });
       });
+      fi.click();
     });
   });
 
@@ -816,8 +827,9 @@ function renderSourceUI(root){
     btn.addEventListener('click',function(){
       var fid=btn.getAttribute('data-delfolder');
       if(!confirm('Hapus folder ini?'))return;
-      lib.folders=lib.folders.filter(function(f){return f.id!==fid;});
-      srcSet(lib);renderSourceUI(root);
+      var freshLib=srcGet();
+      freshLib.folders=freshLib.folders.filter(function(f){return f.id!==fid;});
+      srcSet(freshLib);renderSourceUI(root);
     });
   });
 
@@ -825,8 +837,9 @@ function renderSourceUI(root){
   root.querySelectorAll('[data-delfimg]').forEach(function(btn){
     btn.addEventListener('click',function(){
       var fid=btn.getAttribute('data-delfimg'),idx=parseInt(btn.getAttribute('data-imgidx'));
-      var fl2=lib.folders.find(function(f){return f.id===fid;});if(!fl2)return;
-      fl2.images.splice(idx,1);srcSet(lib);renderSourceUI(root);
+      var freshLib=srcGet();
+      var fl2=freshLib.folders.find(function(f){return f.id===fid;});if(!fl2)return;
+      fl2.images.splice(idx,1);srcSet(freshLib);renderSourceUI(root);
     });
   });
 
