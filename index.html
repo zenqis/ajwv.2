@@ -6525,18 +6525,30 @@ function _toolsDescAddHistory(type, label, count){
   if(_toolDescHistory.length>200) _toolDescHistory=_toolDescHistory.slice(0,200);
   try{ localStorage.setItem('ajw_tools_desc_history', JSON.stringify(_toolDescHistory)); }catch(e){}
 }
-function _toolsDescToggleExportMenu(){
-  var m=document.getElementById('TOOL-DESC-EXPORT-MENU');
-  if(!m) return;
-  var isOpen=m.style.display!=='none';
-  m.style.display=isOpen?'none':'block';
-  if(!isOpen){
-    /* close on outside click */
-    setTimeout(function(){
-      function _close(ev){ if(!m.contains(ev.target)){ m.style.display='none'; document.removeEventListener('click',_close); } }
-      document.addEventListener('click',_close);
-    },10);
-  }
+function _toolsDescToggleExportMenu(btn){
+  /* remove existing dropdown */
+  var ex=document.getElementById('TOOL-DESC-EXPORT-MENU');
+  if(ex){ ex.remove(); return; }
+  /* create body-level dropdown to avoid overflow clipping */
+  var rect=btn.getBoundingClientRect();
+  var m=document.createElement('div');
+  m.id='TOOL-DESC-EXPORT-MENU';
+  m.style.cssText='position:fixed;z-index:99999;top:'+(rect.bottom+4)+'px;right:'+(window.innerWidth-rect.right)+'px;'+
+    'background:var(--bg);border:1px solid var(--br);border-radius:8px;min-width:220px;'+
+    'box-shadow:0 8px 24px rgba(0,0,0,.18);overflow:hidden';
+  m.innerHTML=
+    '<button onclick="_toolsDescExportResults(\'simple\')" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--br);padding:10px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">'+
+      'Tanpa Judul<div style="font-size:10px;color:var(--tx2);margin-top:2px">kode · nama produk · deskripsi terbaru</div>'+
+    '</button>'+
+    '<button onclick="_toolsDescExportResults(\'with-title\')" style="width:100%;text-align:left;background:none;border:none;padding:10px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">'+
+      'Dengan Judul<div style="font-size:10px;color:var(--tx2);margin-top:2px">kode · nama produk · judul terbaru · deskripsi terbaru</div>'+
+    '</button>';
+  document.body.appendChild(m);
+  /* close on outside click */
+  setTimeout(function(){
+    function _close(ev){ if(!m.contains(ev.target)&&ev.target!==btn){ m.remove(); document.removeEventListener('click',_close); } }
+    document.addEventListener('click',_close);
+  },10);
 }
 function _toolsDescShowHistory(){
   var hist=_toolDescHistory||[];
@@ -6548,13 +6560,20 @@ function _toolsDescShowHistory(){
     body+='<span style="font-size:11px;color:var(--tx2)">'+hist.length+' entri tersimpan</span>';
     body+='<button class="btnsm" onclick="confirmDelete(\'Hapus semua riwayat?\',function(){_toolDescHistory=[];_toolsSave();_toolsDescModalClose();})">Hapus Semua</button>';
     body+='</div>';
-    body+='<div style="overflow:auto;max-height:68vh"><table class="tbl"><thead><tr><th>Waktu</th><th>Aktivitas</th><th style="width:80px;text-align:right">Jumlah</th></tr></thead><tbody>';
-    hist.forEach(function(h){
+    var TH='padding:7px 12px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap';
+    var TD='padding:8px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle';
+    body+='<div style="overflow:auto;max-height:62vh;border:1px solid #e2e8f0;border-radius:8px">';
+    body+='<table style="width:100%;border-collapse:collapse;background:#fff">';
+    body+='<thead><tr><th style="'+TH+'">Waktu</th><th style="'+TH+'">Aktivitas</th><th style="'+TH+';text-align:right;width:72px">Jumlah</th></tr></thead><tbody>';
+    hist.forEach(function(h,i){
       var tsStr=String(h.ts||'').replace('T',' ').replace('Z','').slice(0,16);
       var icon=h.type==='export'?'↓':(h.type==='import'?'↑':h.type==='generate-retry'?'↺':'▶');
-      body+='<tr><td style="font-size:11px;white-space:nowrap;color:var(--tx2)">'+esc(tsStr)+'</td>';
-      body+='<td style="font-size:11px">'+icon+' '+esc(h.label||h.type||'-')+'</td>';
-      body+='<td style="font-size:11px;text-align:right;color:var(--tx2)">'+(h.count||'-')+'</td></tr>';
+      var rowBg=i%2===0?'#fff':'#f9fafb';
+      body+='<tr style="background:'+rowBg+'">';
+      body+='<td style="'+TD+';font-size:11px;color:#64748b;white-space:nowrap">'+esc(tsStr)+'</td>';
+      body+='<td style="'+TD+';font-size:12px;color:#1e293b">'+icon+' '+esc(h.label||h.type||'-')+'</td>';
+      body+='<td style="'+TD+';font-size:12px;color:#64748b;text-align:right">'+(h.count||'-')+'</td>';
+      body+='</tr>';
     });
     body+='</tbody></table></div>';
   }
@@ -9368,13 +9387,8 @@ function _renderTools(sub){
     desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
     desc+='<button class="btns" onclick="_toolsDescImportFile()">Import</button>';
-    /* export dropdown */
-    desc+='<div style="position:relative;display:inline-block">';
-    desc+='<button class="btns" onclick="_toolsDescToggleExportMenu()" style="display:flex;align-items:center;gap:4px">Export <span style="font-size:9px;opacity:.7">▾</span></button>';
-    desc+='<div id="TOOL-DESC-EXPORT-MENU" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg);border:1px solid var(--br);border-radius:8px;z-index:500;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden">';
-    desc+='<button onclick="_toolsDescExportResults(\'simple\')" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--br);padding:9px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">Tanpa Judul<div style="font-size:10px;color:var(--tx2);margin-top:2px">kode · nama produk · deskripsi terbaru</div></button>';
-    desc+='<button onclick="_toolsDescExportResults(\'with-title\')" style="width:100%;text-align:left;background:none;border:none;padding:9px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">Dengan Judul<div style="font-size:10px;color:var(--tx2);margin-top:2px">kode · nama produk · judul terbaru · deskripsi terbaru</div></button>';
-    desc+='</div></div>';
+    /* export dropdown — rendered to body to avoid overflow clipping */
+    desc+='<button class="btns" onclick="_toolsDescToggleExportMenu(this)" style="display:inline-flex;align-items:center;gap:4px">Export <span style="font-size:9px;opacity:.65">▾</span></button>';
     desc+='<button class="btns" onclick="_toolsDescShowHistory()">Riwayat</button>';
     desc+='</div></div>';
     /* progress bar */
