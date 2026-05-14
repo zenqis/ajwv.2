@@ -633,6 +633,8 @@ function loadAll(){
   try{_toolWebhookDefs=JSON.parse(localStorage.getItem('ajw_tools_webhooks')||'[]')}catch(e){_toolWebhookDefs=[]}
   try{_toolAgentBridge=JSON.parse(localStorage.getItem('ajw_tools_agent_bridge')||'{}')}catch(e){_toolAgentBridge={}}
 try{_toolDescRows=JSON.parse(localStorage.getItem('ajw_tools_desc_revision_rows')||'[]')}catch(e){_toolDescRows=[]}
+try{window._toolDescCols=JSON.parse(localStorage.getItem('ajw_tools_desc_cols')||'[]')}catch(e){window._toolDescCols=[]}
+window._toolDescKeyCol=localStorage.getItem('ajw_tools_desc_keycol')||'kode produk';
 try{_toolDescPrompt=localStorage.getItem('ajw_tools_desc_revision_prompt')||''}catch(e){_toolDescPrompt=''}
 try{_toolDescHistory=JSON.parse(localStorage.getItem('ajw_tools_desc_history')||'[]')}catch(e){_toolDescHistory=[]}
 try{_toolProductRows=JSON.parse(localStorage.getItem('ajw_tools_product_rows')||'[]')}catch(e){_toolProductRows=[]}
@@ -3898,6 +3900,7 @@ function _toolsSave(){
   sv('ajw_tools_webhooks',_toolWebhookDefs||[]);
   sv('ajw_tools_agent_bridge',_toolAgentBridge||{});
   sv('ajw_tools_desc_revision_rows',_toolDescRows||[]);
+  try{localStorage.setItem('ajw_tools_desc_cols',JSON.stringify(window._toolDescCols||[]));localStorage.setItem('ajw_tools_desc_keycol',String(window._toolDescKeyCol||'kode produk'));}catch(e){}
   try{ localStorage.setItem('ajw_tools_desc_revision_prompt', String(_toolDescPrompt||'')); mark('tools_desc_rows'); }catch(e){}
   try{ localStorage.setItem('ajw_tools_desc_history', JSON.stringify((_toolDescHistory||[]).slice(0,200))); }catch(e){}
   sv('ajw_tools_blast_rows',_toolBlastRows||[]);
@@ -5036,21 +5039,35 @@ function _toolsDescDefaultPrompt(){
     '- hasil harus bersih dan nyaman dilihat di Google Sheet atau marketplace'
   ].join('\n');
 }
-function _toolsDescParseAIResponse(text){
-  /* robust extraction: find JUDUL TERBARU block then DESKRIPSI TERBARU block */
+function _toolsDescParseAIResponse(text,cols){
   var t=String(text||'').trim();
-  /* try strict markers first */
+  cols=cols||[];
+  /* multi-column format: KOLOM[label] TERBARU: */
+  if(cols.length>1){
+    var aiMap={};
+    cols.forEach(function(col,i){
+      var label=col.label||col.srcCol;
+      var nextLabel=cols[i+1]?cols[i+1].label||cols[i+1].srcCol:null;
+      var startPat='KOLOM\\['+label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\]\\s*TERBARU\\s*:\\s*\\n?';
+      var endPat=nextLabel?'(?=KOLOM\\['+nextLabel.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\]\\s*TERBARU|$)':'(?=$)';
+      var re=new RegExp(startPat+'([\\s\\S]*?)'+endPat,'i');
+      var m=t.match(re);
+      aiMap[col.srcCol]=m?String(m[1]||'').replace(/\n?-{3,}\s*$/,'').trim():'';
+    });
+    /* also try to fill newTitle/newDescription from first two cols for compat */
+    var firstKey=cols[0]&&cols[0].srcCol;
+    var secondKey=cols[1]&&cols[1].srcCol;
+    return {newTitle:firstKey?aiMap[firstKey]||'':'',newDescription:secondKey?aiMap[secondKey]||'':firstKey?aiMap[firstKey]||'':'',aiMap:aiMap};
+  }
+  /* single-column / legacy format */
   var titleMatch=t.match(/JUDUL\s*TERBARU\s*[:\-]\s*\n?([\s\S]*?)(?=\n\s*\n\s*DESKRIPSI\s*TERBARU\s*[:\-]|\nDESKRIPSI\s*TERBARU\s*[:\-]|$)/i);
   var descMatch=t.match(/DESKRIPSI\s*TERBARU\s*[:\-]\s*\n?([\s\S]*)/i);
   var newTitle=titleMatch?String(titleMatch[1]||'').trim():'';
   var newDesc=descMatch?String(descMatch[1]||'').trim():'';
-  /* strip trailing separator lines (---, ===) from description */
   newDesc=newDesc.replace(/\n?-{3,}\s*$/,'').trim();
-  /* remove any [bracket] placeholder text from title */
   newTitle=newTitle.replace(/^\[.*?\]$/,'').trim();
-  /* fallback: if no markers at all, put everything in description */
-  if(!newDesc && !newTitle) newDesc=t;
-  return {newTitle:newTitle, newDescription:newDesc};
+  if(!newDesc&&!newTitle)newDesc=t;
+  return {newTitle:newTitle,newDescription:newDesc,aiMap:{}};
 }
 function _toolsDescPromptValue(){
   return String(_toolDescPrompt||'').trim() || _toolsDescDefaultPrompt();
@@ -6466,45 +6483,184 @@ function _toolsProductExportDiffExcel(){
     toast('XLSX tidak tersedia, export CSV berhasil','info',3200);
   });
 }
-function _toolsDescImportFile(){
+function _toolsDescToggleImportMenu(btn){
+  var ex=document.getElementById('TOOL-DESC-IMPORT-MENU');
+  if(ex){ex.remove();return;}
+  var rect=btn.getBoundingClientRect();
+  var m=document.createElement('div');
+  m.id='TOOL-DESC-IMPORT-MENU';
+  m.style.cssText='position:fixed;z-index:99999;top:'+(rect.bottom+4)+'px;left:'+rect.left+'px;background:var(--bg);border:1px solid var(--br);border-radius:8px;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.18);overflow:hidden';
+  m.innerHTML=
+    '<button onclick="document.getElementById(\'TOOL-DESC-IMPORT-MENU\').remove();_toolsDescPickFile(\'new\')" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--br);padding:10px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">'+
+      'Import Baru<div style="font-size:10px;color:var(--tx2);margin-top:2px">Ganti semua data dengan file baru</div></button>'+
+    '<button onclick="document.getElementById(\'TOOL-DESC-IMPORT-MENU\').remove();_toolsDescPickFile(\'update\')" style="width:100%;text-align:left;background:none;border:none;padding:10px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">'+
+      'Import Update<div style="font-size:10px;color:var(--tx2);margin-top:2px">Perbarui data berdasarkan kode produk</div></button>';
+  document.body.appendChild(m);
+  setTimeout(function(){
+    function _cls(ev){if(!m.contains(ev.target)&&ev.target!==btn){m.remove();document.removeEventListener('click',_cls);}}
+    document.addEventListener('click',_cls);
+  },10);
+}
+
+function _toolsDescPickFile(mode){
+  mode=mode||'new';
   var inp=document.createElement('input');
-  inp.type='file';
-  inp.accept='.csv,.xlsx,.xls';
+  inp.type='file'; inp.accept='.csv,.xlsx,.xls';
   inp.onchange=function(){
     var file=inp.files&&inp.files[0];
     if(!file) return;
     _toolsDescEnsureXLSX(function(ok){
-      var name=String(file.name||'').toLowerCase();
+      var fname=String(file.name||'').toLowerCase();
       if(ok){
         var fr=new FileReader();
         fr.onload=function(ev){
           try{
             var wb=window.XLSX.read(ev.target.result,{type:'array',cellText:true,cellDates:true});
             var ws=wb.Sheets[wb.SheetNames[0]];
-            var rows=window.XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
-            _toolsDescImportRows(rows, file.name);
-          }catch(e){ toast('Gagal membaca file spreadsheet: '+e.message,'error',5200); }
+            var rawRows=window.XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+            _toolsDescShowColumnPicker(rawRows,file.name,mode);
+          }catch(e){toast('Gagal membaca file: '+e.message,'error',5200);}
         };
         fr.readAsArrayBuffer(file);
         return;
       }
-      if(!(name.endsWith('.csv')||name.endsWith('.txt'))){
-        toast('Library XLSX gagal dimuat. Gunakan CSV atau cek koneksi browser.','error',5000);
-        return;
-      }
+      if(!(fname.endsWith('.csv')||fname.endsWith('.txt'))){toast('Gunakan CSV atau pastikan koneksi stabil','error',5000);return;}
       var fr2=new FileReader();
       fr2.onload=function(ev){
         try{
-          var text=String(ev.target.result||'');
-          var rows=_toolsDescParseCSV(text);
-          if(!rows.length){ toast('File CSV kosong atau header tidak cocok','error'); return; }
-          _toolsDescImportRows(rows, file.name);
-        }catch(e){ toast('Gagal membaca CSV: '+e.message,'error'); }
+          var rows=_toolsDescParseCSV(String(ev.target.result||''));
+          if(!rows.length){toast('File CSV kosong','error');return;}
+          _toolsDescShowColumnPicker(rows,file.name,mode);
+        }catch(e){toast('Gagal membaca CSV: '+e.message,'error');}
       };
       fr2.readAsText(file);
     });
   };
   inp.click();
+}
+
+function _toolsDescShowColumnPicker(rawRows,fileName,mode){
+  if(!rawRows||!rawRows.length){toast('File kosong atau tidak terbaca','error');return;}
+  var allCols=Object.keys(rawRows[0]);
+  var norm=function(s){return String(s||'').toLowerCase().replace(/[\s_\-]+/g,'');};
+  /* auto-detect key column */
+  var keyAliases=['kodeproduk','kode','sku','nomorsku','productcode','id'];
+  var autoKey=allCols.filter(function(c){return keyAliases.indexOf(norm(c))>=0;})[0]||allCols[0];
+  /* store pending state */
+  window._toolDescPendingRows=rawRows;
+  window._toolDescPendingFile=fileName;
+  window._toolDescPendingMode=mode;
+  window._toolDescPendingAllCols=allCols;
+
+  var body='';
+  body+='<div style="font-size:11px;color:var(--tx2);margin-bottom:12px">'+esc(fileName)+' &nbsp;·&nbsp; <strong>'+rawRows.length+'</strong> baris &nbsp;·&nbsp; <strong>'+allCols.length+'</strong> kolom</div>';
+  /* key column */
+  body+='<div style="margin-bottom:14px;padding:10px 12px;border:1px solid var(--br);border-radius:8px;background:var(--bg2)">';
+  body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px">Kolom Kunci (Kode Produk) <span style="font-weight:400;text-transform:none">— menjadi pengenal unik, tidak di-generate AI</span></div>';
+  body+='<select id="TDCP-KEY" class="fi" style="font-size:12px;width:100%">';
+  allCols.forEach(function(c){body+='<option value="'+escAttr(c)+'"'+(c===autoKey?' selected':'')+'>'+esc(c)+'</option>';});
+  body+='</select></div>';
+  /* other columns */
+  body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px">Kolom yang Akan Disertakan &amp; Di-generate AI</div>';
+  body+='<div id="TDCP-COLS-LIST" style="display:flex;flex-direction:column;gap:5px;max-height:300px;overflow-y:auto">';
+  var otherCols=allCols.filter(function(c){return c!==autoKey;});
+  otherCols.forEach(function(c,i){
+    var sample=rawRows.slice(0,3).map(function(r){return String(r[c]||'').slice(0,50);}).filter(Boolean).join(' / ');
+    body+='<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:6px">';
+    body+='<input type="checkbox" id="TDCP-CHK-'+i+'" '+(i<8?'checked':'')+' style="margin-top:2px;flex-shrink:0;width:14px;height:14px">';
+    body+='<div style="flex:1;min-width:0">';
+    body+='<div style="font-size:11px;font-weight:600;color:var(--tx)">'+esc(c)+'</div>';
+    if(sample)body+='<div style="font-size:10px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px" title="'+escAttr(sample)+'">'+esc(sample)+'</div>';
+    body+='</div>';
+    body+='<div style="font-size:10px;color:#94a3b8;white-space:nowrap;padding-top:2px">→ AI: <em>'+esc(c)+' Terbaru</em></div>';
+    body+='</div>';
+  });
+  if(!otherCols.length)body+='<div style="font-size:11px;color:var(--tx2);padding:12px">Tidak ada kolom lain selain kunci.</div>';
+  body+='</div>';
+  /* actions */
+  body+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">';
+  body+='<button class="btns" onclick="_toolsDescModalClose()">Batal</button>';
+  body+='<button class="btnp" onclick="_toolsDescCommitImport()">'+(mode==='update'?'Import &amp; Update':'Import Baru')+'</button>';
+  body+='</div>';
+  _toolsDescModalOpen((mode==='update'?'Import Update':'Import Baru')+' — Pilih Kolom',body);
+}
+
+function _toolsDescCommitImport(){
+  var rawRows=window._toolDescPendingRows||[];
+  var fileName=window._toolDescPendingFile||'file';
+  var mode=window._toolDescPendingMode||'new';
+  var allCols=window._toolDescPendingAllCols||[];
+  if(!rawRows.length){toast('Tidak ada data','error');return;}
+  /* read key col */
+  var keyEl=document.getElementById('TDCP-KEY');
+  var keyCol=keyEl?keyEl.value:(allCols[0]||'');
+  /* read selected cols */
+  var otherCols=allCols.filter(function(c){return c!==keyCol;});
+  var selectedCols=otherCols.filter(function(c,i){
+    var chk=document.getElementById('TDCP-CHK-'+i);
+    return chk?chk.checked:true;
+  });
+  /* build global col schema */
+  window._toolDescKeyCol=keyCol;
+  window._toolDescCols=selectedCols.map(function(c){
+    return {srcCol:c,label:c,aiLabel:c+' Terbaru'};
+  });
+  /* auto-detect name/desc cols for backward compat display */
+  var norm=function(s){return String(s||'').toLowerCase().replace(/[\s_\-]+/g,'');};
+  var nameAliases=['namaproduk','nama','judul','title','namaitem'];
+  var descAliases=['deskripsi','description','deskripsi produk','keterangan','konten'];
+  var nameCol=selectedCols.filter(function(c){return nameAliases.indexOf(norm(c))>=0;})[0]||selectedCols[0]||'';
+  var descCol=selectedCols.filter(function(c){return descAliases.indexOf(norm(c))>=0;})[0]||(selectedCols[1]||selectedCols[0]||'');
+  /* map rows */
+  var ts=Date.now();
+  var mapped=rawRows.filter(function(r){return String(r[keyCol]||'').trim();}).map(function(r,idx){
+    var code=String(r[keyCol]||'').trim();
+    var _data={};
+    selectedCols.forEach(function(c){_data[c]=String(r[c]||'').trim();});
+    var ai={};
+    selectedCols.forEach(function(c){ai[c]='';});
+    return {
+      id:'desc_'+ts+'_'+idx+'_'+Math.random().toString(36).slice(2,6),
+      productCode:code,
+      productName:nameCol?String(r[nameCol]||'').trim():'',
+      oldDescription:descCol?String(r[descCol]||'').trim():'',
+      _data:_data,
+      _ai:ai,
+      newTitle:'',
+      newDescription:'',
+      status:'ready',
+      updatedAt:isoNow(),
+      error:''
+    };
+  });
+  if(!mapped.length){toast('Tidak ada baris dengan kode produk yang valid','error');return;}
+  if(mode==='update'){
+    var existing=(_toolDescRows||[]).slice();
+    var byCode={};
+    existing.forEach(function(r){byCode[r.productCode]=r;});
+    var added=0;
+    mapped.forEach(function(nr){
+      if(byCode[nr.productCode]){
+        var ex=byCode[nr.productCode];
+        ex._data=nr._data; ex._ai=ex._ai||{}; selectedCols.forEach(function(c){if(!ex._ai[c])ex._ai[c]='';});
+        ex.productName=nr.productName; ex.oldDescription=nr.oldDescription; ex.updatedAt=isoNow();
+        if(ex.status==='error')ex.status='ready';
+      }else{
+        existing.push(nr); byCode[nr.productCode]=nr; added++;
+      }
+    });
+    _toolDescRows=existing;
+    toast('Import Update selesai: '+mapped.length+' baris dicocokkan, '+added+' baris baru ditambahkan','success',4800);
+    _toolsDescAddHistory('import-update','Import Update dari '+fileName+' ('+mapped.length+' baris, +'+added+' baru)',mapped.length);
+  }else{
+    _toolDescRows=mapped;
+    toast('Import berhasil: '+mapped.length+' baris dari '+fileName,'success',4200);
+    _toolsDescAddHistory('import','Import Baru dari '+fileName,mapped.length);
+  }
+  window._toolDescPage=0;
+  _toolsSave();
+  _toolsDescModalClose();
+  _renderTools('desc');
 }
 function _toolsDescDownloadTemplate(){
   _toolsDescEnsureXLSX(function(ok){
@@ -6645,9 +6801,25 @@ function _toolsDescDelete(id){
   });
 }
 function _toolsDescBuildPrompt(row){
-  /* Format marker selalu dipaksa di akhir — tidak bergantung pada isi prompt user */
-  var FORMAT_INSTRUCTION='\n\n---\nOUTPUT FORMAT (WAJIB, jangan ubah urutan atau nama heading ini):\n\nJUDUL TERBARU:\n[tulis satu baris judul produk baru di sini, maks 150 karakter]\n\nDESKRIPSI TERBARU:\n[tulis deskripsi produk baru di sini, boleh multi-baris]\n---';
-  return _toolsDescPromptValue()+FORMAT_INSTRUCTION+'\n\nData produk:\nKode Produk: '+(row.productCode||'-')+'\nNama Produk Asli: '+(row.productName||'-')+'\nDeskripsi Produk Asli:\n'+(row.oldDescription||'-');
+  var cols=window._toolDescCols||[];
+  var hasExtra=cols.length>0&&row._data;
+  var FORMAT_INSTRUCTION;
+  if(hasExtra&&cols.length>1){
+    /* multi-column format */
+    var colFormats=cols.map(function(c){
+      return 'KOLOM['+c.label+'] TERBARU:\n[tulis '+c.aiLabel+' baru di sini]';
+    }).join('\n\n');
+    FORMAT_INSTRUCTION='\n\n---\nOUTPUT FORMAT (WAJIB, tulis setiap blok tepat seperti ini):\n\n'+colFormats+'\n---';
+  }else{
+    FORMAT_INSTRUCTION='\n\n---\nOUTPUT FORMAT (WAJIB, jangan ubah urutan atau nama heading ini):\n\nJUDUL TERBARU:\n[tulis satu baris judul produk baru di sini, maks 150 karakter]\n\nDESKRIPSI TERBARU:\n[tulis deskripsi produk baru di sini, boleh multi-baris]\n---';
+  }
+  var prompt=_toolsDescPromptValue()+FORMAT_INSTRUCTION+'\n\nKode Produk: '+(row.productCode||'-')+'\n';
+  if(hasExtra){
+    cols.forEach(function(c){prompt+=(c.label||c.srcCol)+': '+(row._data[c.srcCol]||'-')+'\n';});
+  }else{
+    prompt+='Nama Produk Asli: '+(row.productName||'-')+'\nDeskripsi Produk Asli:\n'+(row.oldDescription||'-');
+  }
+  return prompt;
 }
 function _toolsDescGenerateOne(id, quiet){
   var row=(_toolDescRows||[]).filter(function(r){ return r.id===id; })[0];
@@ -6672,9 +6844,13 @@ function _toolsDescGenerateOne(id, quiet){
       if(!res.ok) throw new Error((data&&data.error&&data.error.message)||('HTTP '+res.status));
       var text=String((((data||{}).choices||[])[0]||{}).message&&(((data||{}).choices||[])[0]||{}).message.content||'').trim();
       if(!text) throw new Error('AI tidak mengembalikan hasil');
-      var parsed=_toolsDescParseAIResponse(text);
+      var parsed=_toolsDescParseAIResponse(text, window._toolDescCols||[]);
       row.newTitle=parsed.newTitle||'';
       row.newDescription=parsed.newDescription||'';
+      if(parsed.aiMap&&Object.keys(parsed.aiMap).length){
+        if(!row._ai)row._ai={};
+        Object.keys(parsed.aiMap).forEach(function(k){row._ai[k]=parsed.aiMap[k]||'';});
+      }
       row.status='done';
       row.error='';
       row.updatedAt=isoNow();
@@ -9404,7 +9580,7 @@ function _renderTools(sub){
     desc+='<div style="font-size:13px;font-weight:800;color:var(--tx)">Revisi Deskripsi Produk</div>';
     desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
-    desc+='<button class="btns" onclick="_toolsDescImportFile()">Import</button>';
+    desc+='<button class="btns" onclick="_toolsDescToggleImportMenu(this)" style="display:inline-flex;align-items:center;gap:4px">Import <span style="font-size:9px;opacity:.65">▾</span></button>';
     desc+='<button class="btns" onclick="_toolsDescToggleExportMenu(this)" style="display:inline-flex;align-items:center;gap:4px">Export <span style="font-size:9px;opacity:.65">▾</span></button>';
     desc+='<button class="btns" onclick="_toolsDescShowHistory()">Riwayat</button>';
     desc+='</div></div>';
@@ -9472,24 +9648,43 @@ function _renderTools(sub){
       desc+='</div>';
     }
 
-    /* table with fixed layout */
+    /* table with fixed layout — dynamic columns based on _toolDescCols */
+    var tblCols=window._toolDescCols||[];
+    var hasDynamicCols=tblCols.length>0&&((_toolDescRows||[]).some(function(r){return r._data;}));
+    var totalColCount=hasDynamicCols?(2+tblCols.length*2+2):(3+4+1); /* No+Kode + dynamic pairs + Status+Aksi */
     desc+='<div style="overflow-x:auto">';
-    desc+='<table class="tbl" style="table-layout:fixed;min-width:1060px"><colgroup>';
-    desc+='<col style="width:36px"><col style="width:100px"><col style="width:170px"><col><col style="width:170px"><col><col style="width:60px"><col style="width:84px">';
+    var minW=hasDynamicCols?(320+tblCols.length*340)+'px':'1060px';
+    desc+='<table class="tbl" style="table-layout:fixed;min-width:'+minW+'"><colgroup>';
+    desc+='<col style="width:36px"><col style="width:100px">'; /* No, Kode */
+    if(hasDynamicCols){
+      tblCols.forEach(function(c,i){
+        desc+='<col style="width:180px"><col>'; /* original + ai */
+      });
+    }else{
+      desc+='<col style="width:170px"><col><col style="width:170px"><col>'; /* legacy 4 cols */
+    }
+    desc+='<col style="width:60px"><col style="width:84px">'; /* Status, Aksi */
     desc+='</colgroup><thead><tr>';
     desc+='<th style="text-align:center;padding:6px 4px">No</th>';
     desc+='<th style="padding:6px 8px">Kode</th>';
-    desc+='<th style="padding:6px 8px">Nama Produk</th>';
-    desc+='<th style="padding:6px 8px">Deskripsi Produk</th>';
-    desc+='<th style="padding:6px 8px">Judul Terbaru</th>';
-    desc+='<th style="padding:6px 8px">Deskripsi Terbaru</th>';
+    if(hasDynamicCols){
+      tblCols.forEach(function(c){
+        desc+='<th style="padding:6px 8px">'+esc(c.label)+'</th>';
+        desc+='<th style="padding:6px 8px;background:rgba(0,0,0,.03)">'+esc(c.aiLabel)+'</th>';
+      });
+    }else{
+      desc+='<th style="padding:6px 8px">Nama Produk</th>';
+      desc+='<th style="padding:6px 8px">Deskripsi Produk</th>';
+      desc+='<th style="padding:6px 8px">Judul Terbaru</th>';
+      desc+='<th style="padding:6px 8px">Deskripsi Terbaru</th>';
+    }
     desc+='<th style="padding:6px 8px">Status</th>';
     desc+='<th style="padding:6px 8px">Aksi</th>';
     desc+='</tr></thead><tbody>';
     if(!rows.length){
-      desc+='<tr><td colspan="8" style="text-align:center;color:var(--tx2);padding:24px">Belum ada data. Import template dulu.</td></tr>';
+      desc+='<tr><td colspan="'+totalColCount+'" style="text-align:center;color:var(--tx2);padding:24px">Belum ada data. Import template dulu.</td></tr>';
     } else if(!pageRows.length){
-      desc+='<tr><td colspan="8" style="text-align:center;color:var(--tx2);padding:16px">Tidak ada baris yang cocok dengan pencarian / filter.</td></tr>';
+      desc+='<tr><td colspan="'+totalColCount+'" style="text-align:center;color:var(--tx2);padding:16px">Tidak ada baris yang cocok dengan pencarian / filter.</td></tr>';
     }
     for(var _pi=0;_pi<pageRows.length;_pi++){
       var r=pageRows[_pi];
@@ -9502,12 +9697,23 @@ function _renderTools(sub){
       desc+='<tr style="vertical-align:top">';
       desc+='<td style="text-align:center;font-size:11px;color:var(--tx2);padding:7px 4px">'+(globalIdx+1)+'</td>';
       desc+='<td style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productCode||'')+'">'+esc(r.productCode||'-')+'</td>';
-      desc+='<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productName||'')+'">'+esc(r.productName||'-')+'</td>';
-      desc+='<td style="font-size:11px;color:var(--tx2);padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45">'+esc(oldTxt||'-')+'</div></td>';
-      desc+='<td style="font-size:11px;padding:7px 8px;overflow:hidden;text-overflow:ellipsis"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTitleTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTitleTxt||'-')+'</div></td>';
-      desc+='<td style="font-size:11px;padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTxt||'-')+'</div>';
-      if(r.error) desc+='<div style="font-size:10px;color:var(--tx2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.error)+'">⚠ '+esc(r.error.slice(0,50))+'</div>';
-      desc+='</td>';
+      if(hasDynamicCols&&r._data){
+        tblCols.forEach(function(c){
+          var origVal=String(r._data[c.srcCol]||'');
+          var aiVal=String((r._ai&&r._ai[c.srcCol])||'');
+          desc+='<td style="font-size:11px;color:var(--tx2);padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45">'+esc(origVal||'-')+'</div></td>';
+          desc+='<td style="font-size:11px;padding:7px 8px;background:rgba(0,0,0,.02)"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(aiVal?'var(--tx)':'var(--tx2)')+'">'+esc(aiVal||'-')+'</div>';
+          if(c.srcCol===tblCols[tblCols.length-1].srcCol&&r.error)desc+='<div style="font-size:10px;color:var(--tx2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.error)+'">⚠ '+esc(r.error.slice(0,50))+'</div>';
+          desc+='</td>';
+        });
+      }else{
+        desc+='<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productName||'')+'">'+esc(r.productName||'-')+'</td>';
+        desc+='<td style="font-size:11px;color:var(--tx2);padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45">'+esc(oldTxt||'-')+'</div></td>';
+        desc+='<td style="font-size:11px;padding:7px 8px;overflow:hidden;text-overflow:ellipsis"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTitleTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTitleTxt||'-')+'</div></td>';
+        desc+='<td style="font-size:11px;padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTxt||'-')+'</div>';
+        if(r.error) desc+='<div style="font-size:10px;color:var(--tx2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.error)+'">⚠ '+esc(r.error.slice(0,50))+'</div>';
+        desc+='</td>';
+      }
       desc+='<td style="font-size:11px;padding:7px 8px;white-space:nowrap">'+sLabel+'</td>';
       desc+='<td style="padding:5px 8px"><select class="fi" style="padding:3px 4px;font-size:11px;width:100%" onchange="_toolsDescAction(\''+r.id+'\',this.value,'+globalIdx+');this.value=\'\'">';
       desc+='<option value="">—</option><option value="preview">Preview</option><option value="gen">Generate</option><option value="from">Dari sini</option><option value="del">Hapus</option>';
