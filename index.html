@@ -9303,35 +9303,36 @@ function _renderTools(sub){
 
     /* ─── table card ─── */
     desc+='<div class="card" style="padding:10px 14px">';
-    /* toolbar row */
-    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">';
-    /* left: search + filter */
-    desc+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-    desc+='<input id="TOOL-DESC-SEARCH" class="fi" placeholder="Cari kode / nama…" value="'+escAttr(window._toolDescSearch||'')+'" style="padding:4px 8px;font-size:11px;width:160px" oninput="window._toolDescSearch=this.value;window._toolDescPage=0;_renderTools(\'desc\')">';
-    desc+='<select class="fi" style="padding:4px 8px;font-size:11px" onchange="window._toolDescFilter=this.value;window._toolDescPage=0;_renderTools(\'desc\')">';
+    /* single toolbar row: [search][filter][count]──────[prompt][gen/stop][retry][kosongkan] */
+    desc+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+    /* search — debounced, does NOT trigger full re-render on keystroke */
+    desc+='<input id="TOOL-DESC-SEARCH" class="fi" placeholder="Cari kode / nama…" value="'+escAttr(window._toolDescSearch||'')+'" style="padding:5px 9px;font-size:11px;width:170px" oninput="window._toolDescSearch=this.value;clearTimeout(window._toolDescST);window._toolDescST=setTimeout(function(){window._toolDescPage=0;_renderTools(\'desc\');var el=document.getElementById(\'TOOL-DESC-SEARCH\');if(el){el.focus();var v=el.value.length;el.setSelectionRange(v,v);}},280)">';
+    /* filter dropdown */
+    desc+='<select class="fi" style="padding:5px 8px;font-size:11px" onchange="window._toolDescFilter=this.value;window._toolDescPage=0;_renderTools(\'desc\')">';
     desc+='<option value="all"'+(window._toolDescFilter==='all'?' selected':'')+'>Semua</option>';
     desc+='<option value="ready"'+(window._toolDescFilter==='ready'?' selected':'')+'>Siap</option>';
     desc+='<option value="done"'+(window._toolDescFilter==='done'?' selected':'')+'>Selesai</option>';
     desc+='<option value="error"'+(window._toolDescFilter==='error'?' selected':'')+'>Error</option>';
     desc+='<option value="running"'+(window._toolDescFilter==='running'?' selected':'')+'>Proses</option>';
     desc+='</select>';
-    if(filteredRows.length!==rows.length) desc+='<span style="font-size:11px;color:var(--tx2)">'+filteredRows.length+' hasil</span>';
-    desc+='</div>';
-    /* right: action buttons */
-    desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    desc+='<button class="btns" onclick="_toolsDescOpenPromptModal()">Prompt</button>';
+    /* result count */
+    if(filteredRows.length!==rows.length) desc+='<span style="font-size:11px;color:var(--tx2);flex-shrink:0">'+filteredRows.length+' hasil</span>';
+    /* spacer */
+    desc+='<span style="flex:1"></span>';
+    /* action buttons — same height/style, all aligned */
+    desc+='<button class="btns" style="padding:5px 10px;font-size:11px" onclick="_toolsDescOpenPromptModal()">Prompt</button>';
     if(isRunning){
-      desc+='<button class="btns" onclick="_toolDescRunState.running=false;_renderTools(\'desc\')">Stop</button>';
+      desc+='<button class="btns" style="padding:5px 10px;font-size:11px" onclick="_toolDescRunState.running=false;_renderTools(\'desc\')">Stop</button>';
     } else {
-      desc+='<button class="btns" onclick="_toolsDescRunFrom(0)">Generate Semua</button>';
-      if(errCount>0) desc+='<button class="btns" onclick="_toolsDescRetryErrors()">Retry Error ('+errCount+')</button>';
+      desc+='<button class="btns" style="padding:5px 10px;font-size:11px" onclick="_toolsDescRunFrom(0)">Generate Semua</button>';
+      if(errCount>0) desc+='<button class="btns" style="padding:5px 10px;font-size:11px" onclick="_toolsDescRetryErrors()">Retry Error ('+errCount+')</button>';
     }
-    desc+='<button class="btnsm" onclick="confirmDelete(\'Kosongkan semua data?\',function(){_toolDescRows=[];window._toolDescPage=0;window._toolDescSearch=\'\';window._toolDescFilter=\'all\';_toolsSave();_renderTools(\'desc\')})">Kosongkan</button>';
-    desc+='</div></div>';
-    /* info row */
+    desc+='<button class="btnsm" style="padding:5px 9px;font-size:11px" onclick="confirmDelete(\'Kosongkan semua data?\',function(){_toolDescRows=[];window._toolDescPage=0;window._toolDescSearch=\'\';window._toolDescFilter=\'all\';_toolsSave();_renderTools(\'desc\')})">Kosongkan</button>';
+    desc+='</div>';
+    /* compact info line */
     if(rows.length>0){
       desc+='<div style="font-size:10px;color:var(--tx2);margin-bottom:6px">';
-      desc+='Hal '+(window._toolDescPage+1)+'/'+totalPages+' &nbsp;·&nbsp; '+pageStart+'-'+Math.min(pageStart+PAGE_SIZE,filteredRows.length)+' dari '+filteredRows.length;
+      desc+='Hal '+(window._toolDescPage+1)+'/'+totalPages+' &nbsp;·&nbsp; '+(pageStart+1)+'-'+Math.min(pageStart+PAGE_SIZE,filteredRows.length)+' dari '+filteredRows.length+(filteredRows.length!==rows.length?' (filter aktif)':'');
       desc+='</div>';
     }
 
@@ -9391,7 +9392,13 @@ function _renderTools(sub){
       desc+='</div>';
     }
     desc+='</div>';
+    var _hadFocus=document.activeElement&&document.activeElement.id==='TOOL-DESC-SEARCH';
     content.innerHTML=desc;
+    /* restore focus to search if user was typing */
+    if(_hadFocus){
+      var _si=document.getElementById('TOOL-DESC-SEARCH');
+      if(_si){ _si.focus(); var _sv=_si.value.length; _si.setSelectionRange(_sv,_sv); }
+    }
     return;
   }
   if(sub==='blast'){
