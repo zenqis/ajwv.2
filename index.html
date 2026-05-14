@@ -5055,6 +5055,12 @@ function _toolsDescParseAIResponse(text){
 function _toolsDescPromptValue(){
   return String(_toolDescPrompt||'').trim() || _toolsDescDefaultPrompt();
 }
+function _toolDescFmtElapsed(ms){
+  var s=Math.floor((ms||0)/1000);
+  var h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  if(h>0) return h+'j '+String(m).padStart(2,'0')+'m '+String(sec).padStart(2,'0')+'d';
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
 function _toolsDescModalClose(){
   var el=document.getElementById('TOOLS-DESC-MODAL');
   if(el) el.remove();
@@ -5112,10 +5118,13 @@ function _toolsDescRetryErrors(){
   _toolsSave();
   /* run only error rows sequentially */
   _toolDescRunState={running:true,startIndex:0};
+  window._toolDescStartTime=Date.now(); window._toolDescEndTime=null;
   var queue=errorRows.slice();
   function step(){
     if(!queue.length){
       _toolDescRunState.running=false;
+      window._toolDescEndTime=Date.now();
+      clearInterval(window._toolDescTimerIv);
       _toolsDescAddHistory('generate-retry','Retry Error — '+errCount+' baris diproses',errCount);
       _toolsSave();
       toast('Retry selesai','success',3200);
@@ -6689,10 +6698,13 @@ function _toolsDescRunFrom(index){
   var rows=_toolDescRows||[];
   if(!rows.length){ toast('Import data deskripsi dulu','warn'); return; }
   _toolDescRunState={running:true,startIndex:index||0};
+  if(!index){ window._toolDescStartTime=Date.now(); window._toolDescEndTime=null; }
   var i=index||0;
   function step(){
     if(i>=rows.length){
       _toolDescRunState.running=false;
+      window._toolDescEndTime=Date.now();
+      clearInterval(window._toolDescTimerIv);
       var _genDone=(_toolDescRows||[]).filter(function(r){return r.status==='done';}).length;
       _toolsDescAddHistory('generate-batch','Generate Semua — '+_genDone+' selesai',_genDone);
       _toolsSave();
@@ -9377,14 +9389,14 @@ function _renderTools(sub){
     var pageRows=filteredRows.slice(pageStart,pageStart+PAGE_SIZE);
     var desc='';
 
-    /* ─── estimasi waktu ─── */
-    var estSecs=(readyCount+(isRunning?1:0))*22;
-    var estStr='—';
-    if(readyCount>0||isRunning){
-      if(estSecs>=3600){ var _eh=Math.floor(estSecs/3600),_em=Math.floor((estSecs%3600)/60); estStr='~'+_eh+' jam'+(_em?' '+_em+' mnt':''); }
-      else if(estSecs>=60){ estStr='~'+Math.ceil(estSecs/60)+' menit'; }
-      else { estStr='~'+estSecs+' detik'; }
-    } else if(rows.length&&!readyCount&&!isRunning){ estStr='Selesai'; }
+    /* ─── elapsed time ─── */
+    var elapsedStr='—';
+    if(window._toolDescStartTime){
+      var _endMs=window._toolDescEndTime||0;
+      var _nowMs=_endMs||(isRunning?Date.now():_endMs);
+      if(_nowMs) elapsedStr=_toolDescFmtElapsed(_nowMs-window._toolDescStartTime);
+      if(!isRunning&&_endMs) elapsedStr='✓ '+_toolDescFmtElapsed(_endMs-window._toolDescStartTime);
+    }
 
     /* ─── header: title row + action buttons ─── */
     desc+='<div class="card" style="margin-bottom:10px;padding:12px 16px">';
@@ -9407,11 +9419,11 @@ function _renderTools(sub){
       ['Selesai',doneCount,'Berhasil direvisi AI'],
       ['Error',errCount,'Gagal, bisa di-retry'],
       ['Pending',readyCount,'Belum diproses'],
-      ['Estimasi',estStr,isRunning?'Sedang berjalan':'Sisa waktu proses']
+      ['Durasi',elapsedStr,isRunning?'Waktu berjalan sejak mulai generate':'Total waktu generate','TOOL-DESC-ELAPSED']
     ].forEach(function(kpi){
       desc+='<div style="'+CARD_S+'">';
-      desc+='<div style="'+LABEL_S+'"><span>'+kpi[0]+'</span><span title="'+escAttr(kpi[2])+'" style="font-size:11px;color:#94a3b8;cursor:default;font-weight:400">ⓘ</span></div>';
-      desc+='<div style="'+VAL_S+'">'+kpi[1]+'</div>';
+      desc+='<div style="'+LABEL_S+'"><span>'+kpi[0]+'</span><span title="'+escAttr(kpi[2]||'')+'\" style="font-size:11px;color:#94a3b8;cursor:default;font-weight:400">ⓘ</span></div>';
+      desc+='<div style="'+VAL_S+'">'+(kpi[3]?'<span id="'+kpi[3]+'">'+kpi[1]+'</span>':kpi[1])+'</div>';
       desc+='</div>';
     });
     desc+='</div>';
@@ -9526,6 +9538,15 @@ function _renderTools(sub){
     if(_hadFocus){
       var _si=document.getElementById('TOOL-DESC-SEARCH');
       if(_si){ _si.focus(); var _sv=_si.value.length; _si.setSelectionRange(_sv,_sv); }
+    }
+    /* live elapsed timer — ticks every second while running */
+    clearInterval(window._toolDescTimerIv);
+    if(isRunning && window._toolDescStartTime){
+      window._toolDescTimerIv=setInterval(function(){
+        var el=document.getElementById('TOOL-DESC-ELAPSED');
+        if(!el){ clearInterval(window._toolDescTimerIv); return; }
+        el.textContent=_toolDescFmtElapsed(Date.now()-window._toolDescStartTime);
+      },1000);
     }
     return;
   }
