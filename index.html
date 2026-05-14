@@ -333,6 +333,7 @@ var _toolAgentBridge={};
 var _toolDescRows=[];
 var _toolDescPrompt='';
 var _toolDescRunState={running:false,startIndex:0};
+var _toolDescHistory=[];
 var _toolProductRows=[];
 var _toolProductStorageMode='local_full';
 var _toolBlastRows=[];
@@ -633,6 +634,7 @@ function loadAll(){
   try{_toolAgentBridge=JSON.parse(localStorage.getItem('ajw_tools_agent_bridge')||'{}')}catch(e){_toolAgentBridge={}}
 try{_toolDescRows=JSON.parse(localStorage.getItem('ajw_tools_desc_revision_rows')||'[]')}catch(e){_toolDescRows=[]}
 try{_toolDescPrompt=localStorage.getItem('ajw_tools_desc_revision_prompt')||''}catch(e){_toolDescPrompt=''}
+try{_toolDescHistory=JSON.parse(localStorage.getItem('ajw_tools_desc_history')||'[]')}catch(e){_toolDescHistory=[]}
 try{_toolProductRows=JSON.parse(localStorage.getItem('ajw_tools_product_rows')||'[]')}catch(e){_toolProductRows=[]}
 try{_toolBlastRows=JSON.parse(localStorage.getItem('ajw_tools_blast_rows')||'[]')}catch(e){_toolBlastRows=[]}
   try{_toolBlastTemplate=localStorage.getItem('ajw_tools_blast_template')||''}catch(e){_toolBlastTemplate=''}
@@ -3897,6 +3899,7 @@ function _toolsSave(){
   sv('ajw_tools_agent_bridge',_toolAgentBridge||{});
   sv('ajw_tools_desc_revision_rows',_toolDescRows||[]);
   try{ localStorage.setItem('ajw_tools_desc_revision_prompt', String(_toolDescPrompt||'')); mark('tools_desc_rows'); }catch(e){}
+  try{ localStorage.setItem('ajw_tools_desc_history', JSON.stringify((_toolDescHistory||[]).slice(0,200))); }catch(e){}
   sv('ajw_tools_blast_rows',_toolBlastRows||[]);
   try{ localStorage.setItem('ajw_tools_blast_template', String(_toolBlastTemplate||'')); mark('tools_blast_rows'); }catch(e){}
   sv('ajw_tools_blast_history',_toolBlastHistory||[]);
@@ -5103,6 +5106,7 @@ function _toolsDescRetryErrors(){
   if(_toolDescRunState.running){ toast('Generate masih berjalan','warn'); return; }
   var errorRows=(_toolDescRows||[]).filter(function(r){ return r.status==='error'; });
   if(!errorRows.length){ toast('Tidak ada baris error','warn'); return; }
+  var errCount=errorRows.length;
   /* reset error rows back to ready so runFrom picks them up */
   errorRows.forEach(function(r){ r.status='ready'; r.error=''; });
   _toolsSave();
@@ -5112,6 +5116,7 @@ function _toolsDescRetryErrors(){
   function step(){
     if(!queue.length){
       _toolDescRunState.running=false;
+      _toolsDescAddHistory('generate-retry','Retry Error — '+errCount+' baris diproses',errCount);
       _toolsSave();
       toast('Retry selesai','success',3200);
       _renderTools('desc');
@@ -5834,6 +5839,7 @@ function _toolsDescImportRows(rows, fileName){
   if(!mapped.length){ toast('File kosong atau header tidak cocok','error'); return; }
   _toolDescRows=mapped;
   window._toolDescPage=0;
+  _toolsDescAddHistory('import','Import dari '+esc(fileName),mapped.length);
   _toolsSave();
   toast('Import deskripsi berhasil: '+mapped.length+' baris dari '+fileName,'success',4200);
   _renderTools('desc');
@@ -6513,17 +6519,70 @@ function _toolsDescDownloadTemplate(){
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
   });
 }
-function _toolsDescExportResults(){
-  var rows=[['kode produk','nama produk','deskripsi produk','judul terbaru','deskripsi terbaru']];
-  (_toolDescRows||[]).forEach(function(r){
-    rows.push([r.productCode||'', r.productName||'', r.oldDescription||'', r.newTitle||'', r.newDescription||'']);
-  });
+function _toolsDescAddHistory(type, label, count){
+  if(!_toolDescHistory) _toolDescHistory=[];
+  _toolDescHistory.unshift({type:type, ts:isoNow(), label:label, count:count||0});
+  if(_toolDescHistory.length>200) _toolDescHistory=_toolDescHistory.slice(0,200);
+  try{ localStorage.setItem('ajw_tools_desc_history', JSON.stringify(_toolDescHistory)); }catch(e){}
+}
+function _toolsDescToggleExportMenu(){
+  var m=document.getElementById('TOOL-DESC-EXPORT-MENU');
+  if(!m) return;
+  var isOpen=m.style.display!=='none';
+  m.style.display=isOpen?'none':'block';
+  if(!isOpen){
+    /* close on outside click */
+    setTimeout(function(){
+      function _close(ev){ if(!m.contains(ev.target)){ m.style.display='none'; document.removeEventListener('click',_close); } }
+      document.addEventListener('click',_close);
+    },10);
+  }
+}
+function _toolsDescShowHistory(){
+  var hist=_toolDescHistory||[];
+  var body='';
+  if(!hist.length){
+    body='<div style="text-align:center;color:var(--tx2);padding:24px">Belum ada riwayat export atau generate.</div>';
+  } else {
+    body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+    body+='<span style="font-size:11px;color:var(--tx2)">'+hist.length+' entri tersimpan</span>';
+    body+='<button class="btnsm" onclick="confirmDelete(\'Hapus semua riwayat?\',function(){_toolDescHistory=[];_toolsSave();_toolsDescModalClose();})">Hapus Semua</button>';
+    body+='</div>';
+    body+='<div style="overflow:auto;max-height:68vh"><table class="tbl"><thead><tr><th>Waktu</th><th>Aktivitas</th><th style="width:80px;text-align:right">Jumlah</th></tr></thead><tbody>';
+    hist.forEach(function(h){
+      var tsStr=String(h.ts||'').replace('T',' ').replace('Z','').slice(0,16);
+      var icon=h.type==='export'?'↓':(h.type==='import'?'↑':h.type==='generate-retry'?'↺':'▶');
+      body+='<tr><td style="font-size:11px;white-space:nowrap;color:var(--tx2)">'+esc(tsStr)+'</td>';
+      body+='<td style="font-size:11px">'+icon+' '+esc(h.label||h.type||'-')+'</td>';
+      body+='<td style="font-size:11px;text-align:right;color:var(--tx2)">'+(h.count||'-')+'</td></tr>';
+    });
+    body+='</tbody></table></div>';
+  }
+  _toolsDescModalOpen('Riwayat Aktivitas', body);
+}
+function _toolsDescExportResults(kind){
+  var onlyWithResult=(_toolDescRows||[]).filter(function(r){ return r.newDescription||r.newTitle; });
+  var rows;
+  if(kind==='simple'){
+    /* tanpa judul: kode, nama produk, deskripsi terbaru */
+    rows=[['kode produk','nama produk','deskripsi terbaru']];
+    onlyWithResult.forEach(function(r){ rows.push([r.productCode||'', r.productName||'', r.newDescription||'']); });
+    _toolsDescAddHistory('export','Export Tanpa Judul',onlyWithResult.length);
+  } else {
+    /* dengan judul: kode, nama produk, judul terbaru, deskripsi terbaru */
+    rows=[['kode produk','nama produk','judul terbaru','deskripsi terbaru']];
+    onlyWithResult.forEach(function(r){ rows.push([r.productCode||'', r.productName||'', r.newTitle||'', r.newDescription||'']); });
+    _toolsDescAddHistory('export','Export Dengan Judul',onlyWithResult.length);
+  }
+  /* close export dropdown if open */
+  var m=document.getElementById('TOOL-DESC-EXPORT-MENU'); if(m) m.style.display='none';
+  var fileName=kind==='simple'?'revisi_deskripsi_tanpa_judul':'revisi_deskripsi_dengan_judul';
   _toolsDescEnsureXLSX(function(ok){
     if(ok){
       var wb=window.XLSX.utils.book_new();
       var ws=window.XLSX.utils.aoa_to_sheet(rows);
       window.XLSX.utils.book_append_sheet(wb, ws, 'Hasil Revisi');
-      window.XLSX.writeFile(wb,'hasil_revisi_deskripsi_produk.xlsx');
+      window.XLSX.writeFile(wb,fileName+'.xlsx');
       return;
     }
     var csv=rows.map(function(row){
@@ -6536,7 +6595,7 @@ function _toolsDescExportResults(){
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
     a.href=url;
-    a.download='hasil_revisi_deskripsi_produk.csv';
+    a.download=fileName+'.csv';
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
   });
@@ -6615,6 +6674,8 @@ function _toolsDescRunFrom(index){
   function step(){
     if(i>=rows.length){
       _toolDescRunState.running=false;
+      var _genDone=(_toolDescRows||[]).filter(function(r){return r.status==='done';}).length;
+      _toolsDescAddHistory('generate-batch','Generate Semua — '+_genDone+' selesai',_genDone);
       _toolsSave();
       toast('Generate deskripsi selesai sampai baris terakhir','success',4200);
       _renderTools('desc');
@@ -9307,7 +9368,14 @@ function _renderTools(sub){
     desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
     desc+='<button class="btns" onclick="_toolsDescImportFile()">Import</button>';
-    desc+='<button class="btns" onclick="_toolsDescExportResults()">Export</button>';
+    /* export dropdown */
+    desc+='<div style="position:relative;display:inline-block">';
+    desc+='<button class="btns" onclick="_toolsDescToggleExportMenu()" style="display:flex;align-items:center;gap:4px">Export <span style="font-size:9px;opacity:.7">▾</span></button>';
+    desc+='<div id="TOOL-DESC-EXPORT-MENU" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg);border:1px solid var(--br);border-radius:8px;z-index:500;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden">';
+    desc+='<button onclick="_toolsDescExportResults(\'simple\')" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--br);padding:9px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">Tanpa Judul<div style="font-size:10px;color:var(--tx2);margin-top:2px">kode · nama produk · deskripsi terbaru</div></button>';
+    desc+='<button onclick="_toolsDescExportResults(\'with-title\')" style="width:100%;text-align:left;background:none;border:none;padding:9px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">Dengan Judul<div style="font-size:10px;color:var(--tx2);margin-top:2px">kode · nama produk · judul terbaru · deskripsi terbaru</div></button>';
+    desc+='</div></div>';
+    desc+='<button class="btns" onclick="_toolsDescShowHistory()">Riwayat</button>';
     desc+='</div></div>';
     /* progress bar */
     desc+='<div style="margin-top:8px">';
