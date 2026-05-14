@@ -6484,22 +6484,8 @@ function _toolsProductExportDiffExcel(){
   });
 }
 function _toolsDescToggleImportMenu(btn){
-  var ex=document.getElementById('TOOL-DESC-IMPORT-MENU');
-  if(ex){ex.remove();return;}
-  var rect=btn.getBoundingClientRect();
-  var m=document.createElement('div');
-  m.id='TOOL-DESC-IMPORT-MENU';
-  m.style.cssText='position:fixed;z-index:99999;top:'+(rect.bottom+4)+'px;left:'+rect.left+'px;background:var(--bg);border:1px solid var(--br);border-radius:8px;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.18);overflow:hidden';
-  m.innerHTML=
-    '<button onclick="document.getElementById(\'TOOL-DESC-IMPORT-MENU\').remove();_toolsDescPickFile(\'new\')" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--br);padding:10px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">'+
-      'Import Baru<div style="font-size:10px;color:var(--tx2);margin-top:2px">Ganti semua data dengan file baru</div></button>'+
-    '<button onclick="document.getElementById(\'TOOL-DESC-IMPORT-MENU\').remove();_toolsDescPickFile(\'update\')" style="width:100%;text-align:left;background:none;border:none;padding:10px 14px;font-size:12px;color:var(--tx);cursor:pointer;display:block">'+
-      'Import Update<div style="font-size:10px;color:var(--tx2);margin-top:2px">Perbarui data berdasarkan kode produk</div></button>';
-  document.body.appendChild(m);
-  setTimeout(function(){
-    function _cls(ev){if(!m.contains(ev.target)&&ev.target!==btn){m.remove();document.removeEventListener('click',_cls);}}
-    document.addEventListener('click',_cls);
-  },10);
+  /* single click — open file picker; mode is chosen inside the column picker modal */
+  _toolsDescPickFile('auto');
 }
 
 function _toolsDescPickFile(mode){
@@ -6543,50 +6529,65 @@ function _toolsDescShowColumnPicker(rawRows,fileName,mode){
   if(!rawRows||!rawRows.length){toast('File kosong atau tidak terbaca','error');return;}
   var allCols=Object.keys(rawRows[0]);
   var norm=function(s){return String(s||'').toLowerCase().replace(/[\s_\-]+/g,'');};
-  /* auto-detect key column */
   var keyAliases=['kodeproduk','kode','sku','nomorsku','productcode','id'];
   var autoKey=allCols.filter(function(c){return keyAliases.indexOf(norm(c))>=0;})[0]||allCols[0];
-  /* store pending state */
+  var existingCount=(_toolDescRows||[]).length;
+  /* default mode: gabung if existing data present, baru if empty */
+  if(mode==='auto') mode=existingCount>0?'update':'new';
   window._toolDescPendingRows=rawRows;
   window._toolDescPendingFile=fileName;
   window._toolDescPendingMode=mode;
   window._toolDescPendingAllCols=allCols;
-  /* store otherCols list so commit can match checkbox indices exactly */
   var otherCols=allCols.filter(function(c){return c!==autoKey;});
   window._toolDescPendingOtherCols=otherCols;
 
   var body='';
-  body+='<div style="font-size:11px;color:var(--tx2);margin-bottom:12px">'+esc(fileName)+' &nbsp;·&nbsp; <strong>'+rawRows.length+'</strong> baris &nbsp;·&nbsp; <strong>'+allCols.length+'</strong> kolom</div>';
-  /* key column */
-  body+='<div style="margin-bottom:14px;padding:10px 12px;border:1px solid var(--br);border-radius:8px;background:var(--bg2)">';
-  body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px">Kolom Kunci (Kode Produk) <span style="font-weight:400;text-transform:none">— menjadi pengenal unik, tidak di-generate AI</span></div>';
+  body+='<div style="font-size:11px;color:var(--tx2);margin-bottom:10px">'+esc(fileName)+' &nbsp;·&nbsp; <strong>'+rawRows.length+'</strong> baris &nbsp;·&nbsp; <strong>'+allCols.length+'</strong> kolom</div>';
+
+  /* ── MODE SELECTOR (only show when existing data exists) ── */
+  if(existingCount>0){
+    body+='<div style="margin-bottom:12px;padding:10px 12px;border:1px solid var(--br);border-radius:8px">';
+    body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px">Mode Import</div>';
+    body+='<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px">';
+    body+='<input type="radio" name="TDCP-MODE" value="update" '+(mode==='update'?'checked':'')+' onchange="window._toolDescPendingMode=\'update\'" style="margin-top:2px;flex-shrink:0">';
+    body+='<div><div style="font-size:12px;font-weight:700;color:var(--tx)">Gabung dengan data yang ada</div>';
+    body+='<div style="font-size:10px;color:var(--tx2);margin-top:2px">'+existingCount+' baris lama tetap ada. Kolom baru dari file ini ditambahkan ke kanan. Baris baru ditambahkan di bawah.</div></div>';
+    body+='</label>';
+    body+='<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">';
+    body+='<input type="radio" name="TDCP-MODE" value="new" '+(mode==='new'?'checked':'')+' onchange="window._toolDescPendingMode=\'new\'" style="margin-top:2px;flex-shrink:0">';
+    body+='<div><div style="font-size:12px;font-weight:700;color:#ef4444">Ganti semua (mulai ulang)</div>';
+    body+='<div style="font-size:10px;color:var(--tx2);margin-top:2px">'+existingCount+' baris yang ada akan dihapus, diganti dengan file ini saja.</div></div>';
+    body+='</label></div>';
+  }
+
+  /* ── KEY COLUMN ── */
+  body+='<div style="margin-bottom:12px;padding:10px 12px;border:1px solid var(--br);border-radius:8px;background:var(--bg2)">';
+  body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px">Kolom Kunci — pengenal unik produk, tidak di-generate AI</div>';
   body+='<select id="TDCP-KEY" class="fi" style="font-size:12px;width:100%">';
   allCols.forEach(function(c){body+='<option value="'+escAttr(c)+'"'+(c===autoKey?' selected':'')+'>'+esc(c)+'</option>';});
   body+='</select></div>';
-  /* other columns */
-  body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px">Kolom yang Akan Disertakan &amp; Di-generate AI</div>';
-  body+='<div id="TDCP-COLS-LIST" style="display:flex;flex-direction:column;gap:5px;max-height:300px;overflow-y:auto">';
-  /* otherCols already stored in window._toolDescPendingOtherCols */
+
+  /* ── COLUMN CHECKLIST ── */
+  body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px">Pilih Kolom</div>';
+  body+='<div style="display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto;margin-bottom:8px">';
   otherCols.forEach(function(c,i){
     var sample=rawRows.slice(0,3).map(function(r){return String(r[c]||'').slice(0,50);}).filter(Boolean).join(' / ');
-    body+='<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:6px">';
-    body+='<input type="checkbox" id="TDCP-CHK-'+i+'" '+(i<8?'checked':'')+' style="margin-top:2px;flex-shrink:0;width:14px;height:14px">';
-    body+='<div style="flex:1;min-width:0">';
-    body+='<div style="font-size:11px;font-weight:600;color:var(--tx)">'+esc(c)+'</div>';
-    if(sample)body+='<div style="font-size:10px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px" title="'+escAttr(sample)+'">'+esc(sample)+'</div>';
+    body+='<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 10px;border:1px solid var(--br);border-radius:6px">';
+    body+='<input type="checkbox" id="TDCP-CHK-'+i+'" checked style="margin-top:2px;flex-shrink:0;width:14px;height:14px">';
+    body+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:600;color:var(--tx)">'+esc(c)+'</div>';
+    if(sample)body+='<div style="font-size:10px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sample)+'</div>';
     body+='</div>';
-    body+='<div style="font-size:10px;color:#94a3b8;white-space:nowrap;padding-top:2px">→ kolom AI: <strong>'+esc(c)+' Terbaru</strong></div>';
+    body+='<div style="font-size:10px;color:#94a3b8;white-space:nowrap;padding-top:2px">→ <em>'+esc(c)+' Terbaru</em></div>';
     body+='</div>';
   });
-  if(!otherCols.length)body+='<div style="font-size:11px;color:var(--tx2);padding:12px">Tidak ada kolom lain selain kunci.</div>';
+  if(!otherCols.length)body+='<div style="font-size:11px;color:var(--tx2);padding:10px">Tidak ada kolom lain selain kunci.</div>';
   body+='</div>';
-  body+='<div style="font-size:10px;color:var(--tx2);margin-top:8px;padding:6px 10px;background:var(--bg2);border-radius:6px">ℹ Nama kolom tidak diubah — akan tampil di tabel persis seperti nama aslinya dari file.</div>';
-  /* actions */
-  body+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">';
+  body+='<div style="font-size:10px;color:var(--tx2);padding:6px 10px;background:var(--bg2);border-radius:6px;margin-bottom:10px">ℹ Nama kolom tidak diubah — tampil di tabel persis seperti aslinya dari file.</div>';
+  body+='<div style="display:flex;justify-content:flex-end;gap:8px">';
   body+='<button class="btns" onclick="_toolsDescModalClose()">Batal</button>';
-  body+='<button class="btnp" onclick="_toolsDescCommitImport()">'+(mode==='update'?'Import &amp; Update':'Import Baru')+'</button>';
+  body+='<button class="btnp" onclick="_toolsDescCommitImport()">Terapkan Import</button>';
   body+='</div>';
-  _toolsDescModalOpen((mode==='update'?'Import Update':'Import Baru')+' — Pilih Kolom',body);
+  _toolsDescModalOpen('Import File — Pilih Kolom',body);
 }
 
 function _toolsDescCommitImport(){
@@ -9672,7 +9673,7 @@ function _renderTools(sub){
     desc+='<div style="font-size:13px;font-weight:800;color:var(--tx)">Revisi Deskripsi Produk</div>';
     desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
-    desc+='<button class="btns" onclick="_toolsDescToggleImportMenu(this)" style="display:inline-flex;align-items:center;gap:4px">Import <span style="font-size:9px;opacity:.65">▾</span></button>';
+    desc+='<button class="btns" onclick="_toolsDescToggleImportMenu(this)">Import</button>';
     desc+='<button class="btns" onclick="_toolsDescToggleExportMenu(this)" style="display:inline-flex;align-items:center;gap:4px">Export <span style="font-size:9px;opacity:.65">▾</span></button>';
     desc+='<button class="btns" onclick="_toolsDescShowHistory()">Riwayat</button>';
     desc+='</div></div>';
