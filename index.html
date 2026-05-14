@@ -5034,13 +5034,19 @@ function _toolsDescDefaultPrompt(){
   ].join('\n');
 }
 function _toolsDescParseAIResponse(text){
-  /* extract JUDUL TERBARU: ... DESKRIPSI TERBARU: ... blocks */
-  var titleMatch=text.match(/JUDUL\s*TERBARU\s*:\s*([\s\S]*?)(?=\n\s*\n?\s*DESKRIPSI\s*TERBARU\s*:|$)/i);
-  var descMatch=text.match(/DESKRIPSI\s*TERBARU\s*:\s*([\s\S]*)/i);
+  /* robust extraction: find JUDUL TERBARU block then DESKRIPSI TERBARU block */
+  var t=String(text||'').trim();
+  /* try strict markers first */
+  var titleMatch=t.match(/JUDUL\s*TERBARU\s*[:\-]\s*\n?([\s\S]*?)(?=\n\s*\n\s*DESKRIPSI\s*TERBARU\s*[:\-]|\nDESKRIPSI\s*TERBARU\s*[:\-]|$)/i);
+  var descMatch=t.match(/DESKRIPSI\s*TERBARU\s*[:\-]\s*\n?([\s\S]*)/i);
   var newTitle=titleMatch?String(titleMatch[1]||'').trim():'';
   var newDesc=descMatch?String(descMatch[1]||'').trim():'';
-  /* fallback: if no markers found, treat whole text as description */
-  if(!newDesc && !newTitle) newDesc=text.trim();
+  /* strip trailing separator lines (---, ===) from description */
+  newDesc=newDesc.replace(/\n?-{3,}\s*$/,'').trim();
+  /* remove any [bracket] placeholder text from title */
+  newTitle=newTitle.replace(/^\[.*?\]$/,'').trim();
+  /* fallback: if no markers at all, put everything in description */
+  if(!newDesc && !newTitle) newDesc=t;
   return {newTitle:newTitle, newDescription:newDesc};
 }
 function _toolsDescPromptValue(){
@@ -6552,7 +6558,9 @@ function _toolsDescDelete(id){
   });
 }
 function _toolsDescBuildPrompt(row){
-  return _toolsDescPromptValue()+'\n\nData produk:\nKode Produk: '+(row.productCode||'-')+'\nNama Produk Asli: '+(row.productName||'-')+'\nDeskripsi Produk Asli:\n'+(row.oldDescription||'-');
+  /* Format marker selalu dipaksa di akhir — tidak bergantung pada isi prompt user */
+  var FORMAT_INSTRUCTION='\n\n---\nOUTPUT FORMAT (WAJIB, jangan ubah urutan atau nama heading ini):\n\nJUDUL TERBARU:\n[tulis satu baris judul produk baru di sini, maks 150 karakter]\n\nDESKRIPSI TERBARU:\n[tulis deskripsi produk baru di sini, boleh multi-baris]\n---';
+  return _toolsDescPromptValue()+FORMAT_INSTRUCTION+'\n\nData produk:\nKode Produk: '+(row.productCode||'-')+'\nNama Produk Asli: '+(row.productName||'-')+'\nDeskripsi Produk Asli:\n'+(row.oldDescription||'-');
 }
 function _toolsDescGenerateOne(id, quiet){
   var row=(_toolDescRows||[]).filter(function(r){ return r.id===id; })[0];
@@ -6568,7 +6576,7 @@ function _toolsDescGenerateOne(id, quiet){
       temperature:0.4,
       max_tokens:1600,
       messages:[
-        {role:'system',content:'Anda adalah editor konten produk marketplace AJW. Buat judul baru dan deskripsi baru sesuai format yang diminta. Jangan menambah informasi yang tidak ada di data asli.'},
+        {role:'system',content:'Anda adalah editor konten produk marketplace. Output HARUS menggunakan format yang ditentukan: blok "JUDUL TERBARU:" berisi satu baris judul, lalu blok "DESKRIPSI TERBARU:" berisi deskripsi lengkap. Jangan ubah nama heading. Jangan tambahkan informasi yang tidak ada di data asli.'},
         {role:'user',content:_toolsDescBuildPrompt(row)}
       ]
     })
