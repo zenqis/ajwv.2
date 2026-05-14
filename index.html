@@ -4993,57 +4993,55 @@ function _toolsAutomationEnsureRunner(){
 }
 function _toolsDescDefaultPrompt(){
   return [
-    'Anda adalah penulis deskripsi produk marketplace profesional untuk toko alat pancing Anton Pancing.',
+    'Anda adalah penulis konten produk marketplace profesional untuk toko alat pancing Anton Pancing.',
     '',
     'Tugas Anda:',
-    '- menulis ulang deskripsi produk menjadi lebih rapi, informatif, menarik, dan mudah dibaca',
-    '- tetap mempertahankan informasi teknis penting dari deskripsi asli',
+    '- buat JUDUL PRODUK baru yang lebih menarik, mengandung kata kunci utama, maks 150 karakter',
+    '- tulis ulang DESKRIPSI PRODUK menjadi lebih rapi, informatif, menarik, dan mudah dibaca',
+    '- tetap mempertahankan informasi teknis penting dari data asli',
     '- jangan mengarang spesifikasi yang tidak ada',
     '- gunakan bahasa Indonesia yang natural, profesional, dan menjual',
     '- hasil akhir harus siap dipakai untuk marketplace',
     '',
-    'Aturan format output:',
-    '- jangan gunakan markdown apa pun',
-    '- jangan gunakan tanda bintang seperti **',
-    '- jangan gunakan emoji',
-    '- jangan gunakan bullet simbol aneh',
-    '- jangan gunakan tabel',
-    '- jangan gunakan pembuka seperti "Berikut deskripsinya"',
-    '- langsung tampilkan hasil akhir',
-    '- gunakan teks bersih dan rapi',
-    '- gunakan pemisahan baris yang enak dibaca',
-    '- buat bagian dengan judul biasa tanpa simbol aneh',
+    'WAJIB — Format output (jangan ubah struktur ini):',
+    'JUDUL TERBARU:',
+    '[judul produk baru satu baris saja]',
     '',
-    'Susunan output:',
-    'Nama Produk',
+    'DESKRIPSI TERBARU:',
+    '[isi deskripsi produk baru di sini]',
     '',
-    'Deskripsi Singkat Produk',
-    'Tulis paragraf pembuka yang menjelaskan produk secara singkat dan menarik.',
+    'Aturan format:',
+    '- jangan gunakan markdown, tanda bintang **, atau emoji',
+    '- jangan gunakan bullet simbol aneh atau tabel',
+    '- jangan tambahkan pembuka seperti "Berikut deskripsinya"',
+    '- gunakan teks bersih dan rapi, pemisahan baris yang enak dibaca',
     '',
-    'Fitur / Keunggulan Utama',
-    'Tulis poin-poin utama dalam format nomor biasa:',
-    '1.',
-    '2.',
-    '3.',
-    'dan seterusnya',
+    'Susunan DESKRIPSI TERBARU:',
+    'Deskripsi Singkat — paragraf pembuka singkat dan menarik',
     '',
-    'Spesifikasi / Ukuran / Varian',
-    'Tulis spesifikasi dalam format rapi per baris.',
-    'Jika ada beberapa ukuran atau varian, pisahkan dengan jelas.',
+    'Fitur / Keunggulan Utama — poin dalam format nomor biasa (1. 2. 3.)',
     '',
-    'Manfaat / Kecocokan Penggunaan',
-    'Tulis paragraf yang menjelaskan kecocokan penggunaan produk.',
+    'Spesifikasi / Ukuran / Varian — rapi per baris, pisahkan varian dengan jelas',
     '',
-    'Penutup',
-    'Tulis penutup singkat yang natural dan profesional.',
+    'Manfaat / Kecocokan Penggunaan — paragraf singkat',
+    '',
+    'Penutup — kalimat penutup natural dan profesional',
     '',
     'Aturan tambahan:',
     '- jangan menambahkan informasi yang tidak ada di data asli',
-    '- jika ada spesifikasi yang tidak lengkap, cukup gunakan yang tersedia',
     '- rapikan istilah teknis agar mudah dipahami',
-    '- jika ada ukuran/varian, susun agar mudah dibaca',
-    '- hasil harus bersih, formal, dan nyaman dilihat di Google Sheet atau marketplace'
+    '- hasil harus bersih dan nyaman dilihat di Google Sheet atau marketplace'
   ].join('\n');
+}
+function _toolsDescParseAIResponse(text){
+  /* extract JUDUL TERBARU: ... DESKRIPSI TERBARU: ... blocks */
+  var titleMatch=text.match(/JUDUL\s*TERBARU\s*:\s*([\s\S]*?)(?=\n\s*\n?\s*DESKRIPSI\s*TERBARU\s*:|$)/i);
+  var descMatch=text.match(/DESKRIPSI\s*TERBARU\s*:\s*([\s\S]*)/i);
+  var newTitle=titleMatch?String(titleMatch[1]||'').trim():'';
+  var newDesc=descMatch?String(descMatch[1]||'').trim():'';
+  /* fallback: if no markers found, treat whole text as description */
+  if(!newDesc && !newTitle) newDesc=text.trim();
+  return {newTitle:newTitle, newDescription:newDesc};
 }
 function _toolsDescPromptValue(){
   return String(_toolDescPrompt||'').trim() || _toolsDescDefaultPrompt();
@@ -5142,6 +5140,7 @@ function _toolsDescNormalizeRow(r, idx){
     productCode:code,
     productName:name,
     oldDescription:oldDesc,
+    newTitle:'',
     newDescription:'',
     status:'ready',
     updatedAt:isoNow(),
@@ -6509,9 +6508,9 @@ function _toolsDescDownloadTemplate(){
   });
 }
 function _toolsDescExportResults(){
-  var rows=[['kode produk','nama produk','deskripsi produk','deskripsi terbaru']];
+  var rows=[['kode produk','nama produk','deskripsi produk','judul terbaru','deskripsi terbaru']];
   (_toolDescRows||[]).forEach(function(r){
-    rows.push([r.productCode||'', r.productName||'', r.oldDescription||'', r.newDescription||'']);
+    rows.push([r.productCode||'', r.productName||'', r.oldDescription||'', r.newTitle||'', r.newDescription||'']);
   });
   _toolsDescEnsureXLSX(function(ok){
     if(ok){
@@ -6539,7 +6538,7 @@ function _toolsDescExportResults(){
 function _toolsDescSetField(id,key){
   var row=(_toolDescRows||[]).filter(function(r){ return r.id===id; })[0];
   if(!row) return;
-  var map={productCode:'TOOL-DESC-EDIT-CODE',productName:'TOOL-DESC-EDIT-NAME',oldDescription:'TOOL-DESC-EDIT-OLD',newDescription:'TOOL-DESC-EDIT-NEW'};
+  var map={productCode:'TOOL-DESC-EDIT-CODE',productName:'TOOL-DESC-EDIT-NAME',oldDescription:'TOOL-DESC-EDIT-OLD',newTitle:'TOOL-DESC-EDIT-NEWTITLE',newDescription:'TOOL-DESC-EDIT-NEW'};
   var el=document.getElementById(map[key]);
   if(el) row[key]=String(el.value||'');
   row.updatedAt=isoNow();
@@ -6553,7 +6552,7 @@ function _toolsDescDelete(id){
   });
 }
 function _toolsDescBuildPrompt(row){
-  return _toolsDescPromptValue()+'\n\nData produk:\nKode Produk: '+(row.productCode||'-')+'\nNama Produk: '+(row.productName||'-')+'\nDeskripsi Produk Asli:\n'+(row.oldDescription||'-');
+  return _toolsDescPromptValue()+'\n\nData produk:\nKode Produk: '+(row.productCode||'-')+'\nNama Produk Asli: '+(row.productName||'-')+'\nDeskripsi Produk Asli:\n'+(row.oldDescription||'-');
 }
 function _toolsDescGenerateOne(id, quiet){
   var row=(_toolDescRows||[]).filter(function(r){ return r.id===id; })[0];
@@ -6567,9 +6566,9 @@ function _toolsDescGenerateOne(id, quiet){
     body:JSON.stringify({
       model:model,
       temperature:0.4,
-      max_tokens:1200,
+      max_tokens:1600,
       messages:[
-        {role:'system',content:'Anda adalah editor deskripsi produk marketplace AJW. Fokus pada perapihan deskripsi dan jangan menambah data yang tidak ada.'},
+        {role:'system',content:'Anda adalah editor konten produk marketplace AJW. Buat judul baru dan deskripsi baru sesuai format yang diminta. Jangan menambah informasi yang tidak ada di data asli.'},
         {role:'user',content:_toolsDescBuildPrompt(row)}
       ]
     })
@@ -6577,15 +6576,17 @@ function _toolsDescGenerateOne(id, quiet){
     return res.json().then(function(data){
       if(!res.ok) throw new Error((data&&data.error&&data.error.message)||('HTTP '+res.status));
       var text=String((((data||{}).choices||[])[0]||{}).message&&(((data||{}).choices||[])[0]||{}).message.content||'').trim();
-      if(!text) throw new Error('AI tidak mengembalikan deskripsi');
-      row.newDescription=text;
+      if(!text) throw new Error('AI tidak mengembalikan hasil');
+      var parsed=_toolsDescParseAIResponse(text);
+      row.newTitle=parsed.newTitle||'';
+      row.newDescription=parsed.newDescription||'';
       row.status='done';
       row.error='';
       row.updatedAt=isoNow();
       _toolsSave();
-      if(!quiet) toast('Deskripsi berhasil direvisi','success');
+      if(!quiet) toast('Judul & deskripsi berhasil direvisi','success');
       if(window._toolsSub==='desc') _renderTools('desc');
-      return text;
+      return parsed;
     });
   }).catch(function(e){
     row.status='error';
@@ -6625,28 +6626,37 @@ function _toolsDescOpenPreview(id){
   if(!row){ toast('Baris tidak ditemukan','error'); return; }
   var oldLen=String(row.oldDescription||'').length, newLen=String(row.newDescription||'').length;
   var body='';
-  /* product meta bar */
-  body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">';
+  /* meta bar: kode + nama asli */
+  body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
   body+='<div><label class="lbl">Kode Produk</label><input id="TOOL-DESC-EDIT-CODE" class="fi" value="'+esc(row.productCode||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productCode\')"></div>';
-  body+='<div><label class="lbl">Nama Produk</label><input id="TOOL-DESC-EDIT-NAME" class="fi" value="'+esc(row.productName||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productName\')"></div>';
+  body+='<div><label class="lbl">Nama Produk (Asli)</label><input id="TOOL-DESC-EDIT-NAME" class="fi" value="'+esc(row.productName||'')+'" oninput="_toolsDescSetField(\''+id+'\',\'productName\')"></div>';
   body+='</div>';
-  /* side-by-side comparison */
+  /* judul comparison */
+  body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">';
+  body+='<div><label class="lbl">Nama Produk (Asli)</label>';
+  body+='<div class="fi" style="padding:8px 10px;font-size:12px;min-height:38px;background:var(--bg2)">'+esc(row.productName||'-')+'</div></div>';
+  body+='<div><label class="lbl">Judul Terbaru (AI)</label>';
+  body+='<input id="TOOL-DESC-EDIT-NEWTITLE" class="fi" value="'+esc(row.newTitle||'')+'" style="font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'newTitle\')"></div>';
+  body+='</div>';
+  /* deskripsi side-by-side */
   body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
   body+='<div>';
-  body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--tx)">Deskripsi Asli</span><span style="font-size:10px;color:var(--tx2)">'+oldLen+' karakter</span></div>';
-  body+='<textarea id="TOOL-DESC-EDIT-OLD" class="fi" rows="18" style="line-height:1.55;font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'oldDescription\')">'+esc(row.oldDescription||'')+'</textarea>';
+  body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><label class="lbl" style="margin:0">Deskripsi Asli</label><span style="font-size:10px;color:var(--tx2)">'+oldLen+' kar</span></div>';
+  body+='<textarea id="TOOL-DESC-EDIT-OLD" class="fi" rows="16" style="line-height:1.55;font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'oldDescription\')">'+esc(row.oldDescription||'')+'</textarea>';
   body+='</div>';
   body+='<div>';
-  body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#6ee7b7">Deskripsi Terbaru</span><span style="font-size:10px;color:var(--tx2)">'+newLen+' karakter'+(newLen&&oldLen?' • '+(newLen>oldLen?'+':'')+String(newLen-oldLen):'')+'</span></div>';
-  body+='<textarea id="TOOL-DESC-EDIT-NEW" class="fi" rows="18" style="line-height:1.55;font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'newDescription\')">'+esc(row.newDescription||'')+'</textarea>';
+  body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><label class="lbl" style="margin:0">Deskripsi Terbaru (AI)</label><span style="font-size:10px;color:var(--tx2)">'+newLen+' kar'+(newLen&&oldLen?' · '+(newLen>oldLen?'+':'')+String(newLen-oldLen):'')+'</span></div>';
+  body+='<textarea id="TOOL-DESC-EDIT-NEW" class="fi" rows="16" style="line-height:1.55;font-size:12px" oninput="_toolsDescSetField(\''+id+'\',\'newDescription\')">'+esc(row.newDescription||'')+'</textarea>';
   body+='</div>';
   body+='</div>';
   /* actions */
-  body+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">';
-  body+='<button class="btns" onclick="_toolsCopy(document.getElementById(\'TOOL-DESC-EDIT-NEW\').value,\'Deskripsi terbaru\')">Salin Hasil</button>';
+  body+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">';
+  body+='<button class="btns" onclick="_toolsCopy((document.getElementById(\'TOOL-DESC-EDIT-NEWTITLE\').value||\'\')+\'\\n\\n\'+(document.getElementById(\'TOOL-DESC-EDIT-NEW\').value||\'\'),\'Judul & Deskripsi terbaru\')">Salin Semua</button>';
+  body+='<button class="btns" onclick="_toolsCopy(document.getElementById(\'TOOL-DESC-EDIT-NEWTITLE\').value,\'Judul terbaru\')">Salin Judul</button>';
+  body+='<button class="btns" onclick="_toolsCopy(document.getElementById(\'TOOL-DESC-EDIT-NEW\').value,\'Deskripsi terbaru\')">Salin Deskripsi</button>';
   body+='<button class="btnp" onclick="_toolsDescGenerateOne(\''+id+'\');_toolsDescModalClose()">Generate Ulang</button>';
   body+='</div>';
-  _toolsDescModalOpen('Perbandingan — '+esc(row.productName||row.productCode||'-'), body);
+  _toolsDescModalOpen('Preview — '+esc(row.newTitle||row.productName||row.productCode||'-'), body);
 }
 function _toolsBlastDefaultTemplate(){
   return [
@@ -9338,26 +9348,29 @@ function _renderTools(sub){
 
     /* table with fixed layout */
     desc+='<div style="overflow-x:auto">';
-    desc+='<table class="tbl" style="table-layout:fixed;min-width:860px"><colgroup>';
-    desc+='<col style="width:40px"><col style="width:110px"><col style="width:190px"><col><col><col style="width:64px"><col style="width:90px">';
+    desc+='<table class="tbl" style="table-layout:fixed;min-width:1060px"><colgroup>';
+    desc+='<col style="width:36px"><col style="width:100px"><col style="width:170px"><col><col style="width:170px"><col><col style="width:60px"><col style="width:84px">';
     desc+='</colgroup><thead><tr>';
     desc+='<th style="text-align:center;padding:6px 4px">No</th>';
     desc+='<th style="padding:6px 8px">Kode</th>';
     desc+='<th style="padding:6px 8px">Nama Produk</th>';
     desc+='<th style="padding:6px 8px">Deskripsi Produk</th>';
+    desc+='<th style="padding:6px 8px">Judul Terbaru</th>';
     desc+='<th style="padding:6px 8px">Deskripsi Terbaru</th>';
     desc+='<th style="padding:6px 8px">Status</th>';
     desc+='<th style="padding:6px 8px">Aksi</th>';
     desc+='</tr></thead><tbody>';
     if(!rows.length){
-      desc+='<tr><td colspan="7" style="text-align:center;color:var(--tx2);padding:24px">Belum ada data. Import template dulu.</td></tr>';
+      desc+='<tr><td colspan="8" style="text-align:center;color:var(--tx2);padding:24px">Belum ada data. Import template dulu.</td></tr>';
     } else if(!pageRows.length){
-      desc+='<tr><td colspan="7" style="text-align:center;color:var(--tx2);padding:16px">Tidak ada baris yang cocok dengan pencarian / filter.</td></tr>';
+      desc+='<tr><td colspan="8" style="text-align:center;color:var(--tx2);padding:16px">Tidak ada baris yang cocok dengan pencarian / filter.</td></tr>';
     }
     for(var _pi=0;_pi<pageRows.length;_pi++){
-      var r=pageRows[_pi], idx=pageStart+_pi;
+      var r=pageRows[_pi];
       var sLabel=r.status==='done'?'Selesai':(r.status==='running'?'Proses':(r.status==='error'?'Error':'Siap'));
-      var oldTxt=String(r.oldDescription||''); var newTxt=String(r.newDescription||'');
+      var oldTxt=String(r.oldDescription||'');
+      var newTxt=String(r.newDescription||'');
+      var newTitleTxt=String(r.newTitle||'');
       /* find global idx for "lanjut dari sini" */
       var globalIdx=rows.indexOf(r);
       desc+='<tr style="vertical-align:top">';
@@ -9365,6 +9378,7 @@ function _renderTools(sub){
       desc+='<td style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productCode||'')+'">'+esc(r.productCode||'-')+'</td>';
       desc+='<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productName||'')+'">'+esc(r.productName||'-')+'</td>';
       desc+='<td style="font-size:11px;color:var(--tx2);padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45">'+esc(oldTxt||'-')+'</div></td>';
+      desc+='<td style="font-size:11px;padding:7px 8px;overflow:hidden;text-overflow:ellipsis"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTitleTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTitleTxt||'-')+'</div></td>';
       desc+='<td style="font-size:11px;padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTxt||'-')+'</div>';
       if(r.error) desc+='<div style="font-size:10px;color:var(--tx2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.error)+'">⚠ '+esc(r.error.slice(0,50))+'</div>';
       desc+='</td>';
