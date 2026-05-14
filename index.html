@@ -9331,8 +9331,8 @@ function _renderAITabAutomation(){
 setTimeout(function(){
   try{ _ajwAIOSBoot(); }catch(e){ console.warn('AI OS boot failed', e); }
 },800);
-function _toolsGenerateImageBoot(){
-  var root=document.getElementById('AJW-GI-ROOT');
+function _toolsGenerateImageBoot(root){
+  if(!root) root=document.getElementById('AJW-GI-ROOT');
   if(!root) return;
   function mount(){
     try{
@@ -9360,9 +9360,36 @@ function _toolsGenerateImageBoot(){
   };
   document.body.appendChild(s);
 }
+function _toolsFlowCanvasBoot(root){
+  if(!root) return;
+  if(typeof window.AJWFlowCanvasMount==='function'){ window.AJWFlowCanvasMount(root); return; }
+  var old=document.getElementById('AJW-FC-UI');
+  if(old) old.remove();
+  var s=document.createElement('script');
+  s.id='AJW-FC-UI';
+  s.src='tools/generate-image/flow-canvas.js?v=20260514.1';
+  s.onload=function(){ if(typeof window.AJWFlowCanvasMount==='function') window.AJWFlowCanvasMount(root); };
+  s.onerror=function(){ root.innerHTML='<div class="card">Flow Canvas gagal dimuat.</div>'; };
+  document.body.appendChild(s);
+}
 function _renderToolsGenerateImage(){
-  setTimeout(_toolsGenerateImageBoot,0);
-  return '<div id="AJW-GI-ROOT"><div class="card">Memuat Generate Image...</div></div>';
+  var mode=window._giTabMode||'classic';
+  setTimeout(function(){
+    var root=document.getElementById('AJW-GI-ROOT');
+    if(!root) return;
+    if(mode==='flow'){
+      _toolsFlowCanvasBoot(root);
+    } else {
+      _toolsGenerateImageBoot(root);
+    }
+  },0);
+  return '<div id="AJW-GI-WRAP">'+
+    '<div style="display:flex;gap:6px;margin-bottom:10px">'+
+      '<button class="'+(mode==='classic'?'btnp':'btns')+'" onclick="window._giTabMode=\'classic\';_renderTools(\'genimg\')">Generate Image</button>'+
+      '<button class="'+(mode==='flow'?'btnp':'btns')+'" onclick="window._giTabMode=\'flow\';_renderTools(\'genimg\')">Flow Canvas</button>'+
+    '</div>'+
+    '<div id="AJW-GI-ROOT"><div class="card">Memuat...</div></div>'+
+  '</div>';
 }
 function _toolsEnsureStandardCss(){
   if(document.getElementById('TOOLS-STANDARD-CSS')) return;
