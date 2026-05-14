@@ -9377,29 +9377,53 @@ function _renderTools(sub){
     var pageRows=filteredRows.slice(pageStart,pageStart+PAGE_SIZE);
     var desc='';
 
-    /* ─── compact header card ─── */
-    desc+='<div class="card" style="margin-bottom:8px;padding:10px 14px">';
-    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
-    desc+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">';
-    desc+='<span style="font-size:13px;font-weight:800;color:var(--tx)">Revisi Deskripsi</span>';
-    desc+='<span style="font-size:11px;color:var(--tx2)">'+rows.length+' baris &nbsp;·&nbsp; '+doneCount+' selesai &nbsp;·&nbsp; '+errCount+' error &nbsp;·&nbsp; '+readyCount+' pending</span>';
-    desc+='</div>';
+    /* ─── estimasi waktu ─── */
+    var estSecs=(readyCount+(isRunning?1:0))*22;
+    var estStr='—';
+    if(readyCount>0||isRunning){
+      if(estSecs>=3600){ var _eh=Math.floor(estSecs/3600),_em=Math.floor((estSecs%3600)/60); estStr='~'+_eh+' jam'+(_em?' '+_em+' mnt':''); }
+      else if(estSecs>=60){ estStr='~'+Math.ceil(estSecs/60)+' menit'; }
+      else { estStr='~'+estSecs+' detik'; }
+    } else if(rows.length&&!readyCount&&!isRunning){ estStr='Selesai'; }
+
+    /* ─── header: title row + action buttons ─── */
+    desc+='<div class="card" style="margin-bottom:10px;padding:12px 16px">';
+    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">';
+    desc+='<div style="font-size:13px;font-weight:800;color:var(--tx)">Revisi Deskripsi Produk</div>';
     desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
     desc+='<button class="btns" onclick="_toolsDescImportFile()">Import</button>';
-    /* export dropdown — rendered to body to avoid overflow clipping */
     desc+='<button class="btns" onclick="_toolsDescToggleExportMenu(this)" style="display:inline-flex;align-items:center;gap:4px">Export <span style="font-size:9px;opacity:.65">▾</span></button>';
     desc+='<button class="btns" onclick="_toolsDescShowHistory()">Riwayat</button>';
     desc+='</div></div>';
-    /* progress bar */
-    desc+='<div style="margin-top:8px">';
-    desc+='<div style="height:4px;border-radius:2px;background:var(--br);overflow:hidden">';
-    desc+='<div style="height:100%;border-radius:2px;background:var(--tx);opacity:.7;width:'+pct+'%;transition:width .4s"></div>';
+
+    /* ─── KPI cards (matching reference design) ─── */
+    var CARD_S='flex:1;min-width:120px;padding:10px 14px;border:1px solid var(--br);border-radius:8px;background:var(--bg)';
+    var LABEL_S='font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#64748b;display:flex;justify-content:space-between;align-items:center';
+    var VAL_S='font-size:20px;font-weight:800;color:var(--tx);margin-top:6px;letter-spacing:-.01em';
+    desc+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+    [
+      ['Total',rows.length,'Semua baris diimport'],
+      ['Selesai',doneCount,'Berhasil direvisi AI'],
+      ['Error',errCount,'Gagal, bisa di-retry'],
+      ['Pending',readyCount,'Belum diproses'],
+      ['Estimasi',estStr,isRunning?'Sedang berjalan':'Sisa waktu proses']
+    ].forEach(function(kpi){
+      desc+='<div style="'+CARD_S+'">';
+      desc+='<div style="'+LABEL_S+'"><span>'+kpi[0]+'</span><span title="'+escAttr(kpi[2])+'" style="font-size:11px;color:#94a3b8;cursor:default;font-weight:400">ⓘ</span></div>';
+      desc+='<div style="'+VAL_S+'">'+kpi[1]+'</div>';
+      desc+='</div>';
+    });
     desc+='</div>';
-    desc+='<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx2);margin-top:4px">';
-    desc+='<span>'+(isRunning?'Memproses — '+esc((curRunRow?curRunRow.productName||curRunRow.productCode:'').slice(0,40)):pct+'% selesai ('+doneCount+' / '+rows.length+')')+'</span>';
+
+    /* ─── progress bar ─── */
+    desc+='<div style="height:4px;border-radius:2px;background:var(--br);overflow:hidden">';
+    desc+='<div style="height:100%;border-radius:2px;background:var(--tx);opacity:.75;width:'+pct+'%;transition:width .5s"></div>';
+    desc+='</div>';
+    desc+='<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx2);margin-top:5px">';
+    desc+='<span>'+(isRunning?'Memproses — '+esc((curRunRow?curRunRow.productName||curRunRow.productCode:'').slice(0,50)):pct+'% selesai ('+doneCount+'/'+rows.length+')')+'</span>';
     desc+='<span>'+pct+'%</span>';
-    desc+='</div></div></div>';
+    desc+='</div></div>';
 
     /* ─── table card ─── */
     desc+='<div class="card" style="padding:10px 14px">';
