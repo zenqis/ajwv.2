@@ -6551,6 +6551,9 @@ function _toolsDescShowColumnPicker(rawRows,fileName,mode){
   window._toolDescPendingFile=fileName;
   window._toolDescPendingMode=mode;
   window._toolDescPendingAllCols=allCols;
+  /* store otherCols list so commit can match checkbox indices exactly */
+  var otherCols=allCols.filter(function(c){return c!==autoKey;});
+  window._toolDescPendingOtherCols=otherCols;
 
   var body='';
   body+='<div style="font-size:11px;color:var(--tx2);margin-bottom:12px">'+esc(fileName)+' &nbsp;·&nbsp; <strong>'+rawRows.length+'</strong> baris &nbsp;·&nbsp; <strong>'+allCols.length+'</strong> kolom</div>';
@@ -6563,7 +6566,7 @@ function _toolsDescShowColumnPicker(rawRows,fileName,mode){
   /* other columns */
   body+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px">Kolom yang Akan Disertakan &amp; Di-generate AI</div>';
   body+='<div id="TDCP-COLS-LIST" style="display:flex;flex-direction:column;gap:5px;max-height:300px;overflow-y:auto">';
-  var otherCols=allCols.filter(function(c){return c!==autoKey;});
+  /* otherCols already stored in window._toolDescPendingOtherCols */
   otherCols.forEach(function(c,i){
     var sample=rawRows.slice(0,3).map(function(r){return String(r[c]||'').slice(0,50);}).filter(Boolean).join(' / ');
     body+='<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:6px">';
@@ -6572,13 +6575,14 @@ function _toolsDescShowColumnPicker(rawRows,fileName,mode){
     body+='<div style="font-size:11px;font-weight:600;color:var(--tx)">'+esc(c)+'</div>';
     if(sample)body+='<div style="font-size:10px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px" title="'+escAttr(sample)+'">'+esc(sample)+'</div>';
     body+='</div>';
-    body+='<div style="font-size:10px;color:#94a3b8;white-space:nowrap;padding-top:2px">→ AI: <em>'+esc(c)+' Terbaru</em></div>';
+    body+='<div style="font-size:10px;color:#94a3b8;white-space:nowrap;padding-top:2px">→ kolom AI: <strong>'+esc(c)+' Terbaru</strong></div>';
     body+='</div>';
   });
   if(!otherCols.length)body+='<div style="font-size:11px;color:var(--tx2);padding:12px">Tidak ada kolom lain selain kunci.</div>';
   body+='</div>';
+  body+='<div style="font-size:10px;color:var(--tx2);margin-top:8px;padding:6px 10px;background:var(--bg2);border-radius:6px">ℹ Nama kolom tidak diubah — akan tampil di tabel persis seperti nama aslinya dari file.</div>';
   /* actions */
-  body+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">';
+  body+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">';
   body+='<button class="btns" onclick="_toolsDescModalClose()">Batal</button>';
   body+='<button class="btnp" onclick="_toolsDescCommitImport()">'+(mode==='update'?'Import &amp; Update':'Import Baru')+'</button>';
   body+='</div>';
@@ -6594,13 +6598,13 @@ function _toolsDescCommitImport(){
   /* read key col */
   var keyEl=document.getElementById('TDCP-KEY');
   var keyCol=keyEl?keyEl.value:(allCols[0]||'');
-  /* read selected cols */
-  var otherCols=allCols.filter(function(c){return c!==keyCol;});
+  /* read selected cols — use stored otherCols so checkbox indices always match */
+  var otherCols=window._toolDescPendingOtherCols||allCols.filter(function(c){return c!==keyCol;});
   var selectedCols=otherCols.filter(function(c,i){
     var chk=document.getElementById('TDCP-CHK-'+i);
     return chk?chk.checked:true;
-  });
-  /* build global col schema */
+  }).filter(function(c){return c!==keyCol;}); /* also exclude key col if user changed it */
+  /* build global col schema — use srcCol = exact original column name, no renaming */
   window._toolDescKeyCol=keyCol;
   window._toolDescCols=selectedCols.map(function(c){
     return {srcCol:c,label:c,aiLabel:c+' Terbaru'};
