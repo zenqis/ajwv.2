@@ -9367,7 +9367,7 @@ function _toolsFlowCanvasBoot(root){
   if(old) old.remove();
   var s=document.createElement('script');
   s.id='AJW-FC-UI';
-  s.src='tools/generate-image/flow-canvas.js?v=20260514.6';
+  s.src='tools/generate-image/flow-canvas.js?v=20260514.7';
   s.onload=function(){ if(typeof window.AJWFlowCanvasMount==='function') window.AJWFlowCanvasMount(root); };
   s.onerror=function(){ root.innerHTML='<div class="card">Flow Canvas gagal dimuat.</div>'; };
   document.body.appendChild(s);

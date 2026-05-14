@@ -717,7 +717,7 @@ window.AJWFlowCanvasMount=function(root){
     '<button id="fc-ai" style="'+bs('#f0fdf4','#16a34a')+'">＋ Gambar Input</button>'+
     '<button id="fc-afs" style="'+bs('#ecfeff','#0891b2')+'">＋ Folder Source</button>'+
     '<button id="fc-ap" style="'+bs('#eef2ff','#4f46e5')+'">＋ Prompt</button>'+
-    '<button id="fc-ag" style="'+bs('#fff7ed','#c2410c')+'border-color:#fed7aa;')+'">＋ Generate</button>'+
+    '<button id="fc-ag" style="'+bs('#fff7ed','#c2410c','border-color:#fed7aa;')+'">＋ Generate</button>'+
     '<button id="fc-ao" style="'+bs('#faf5ff','#6d28d9')+'">＋ Output</button>'+
     '<button id="fc-at" style="'+bs('#fef2f2','#b91c1c')+'">▶ Trigger</button>'+
     '<span style="width:1px;height:20px;background:#e5e7eb;margin:0 2px"></span>'+
