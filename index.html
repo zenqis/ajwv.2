@@ -5095,6 +5095,30 @@ function _toolsDescAction(id,action,idx){
   else if(action==='from') _toolsDescRunFrom(idx);
   else if(action==='del') _toolsDescDelete(id);
 }
+function _toolsDescRetryErrors(){
+  if(_toolDescRunState.running){ toast('Generate masih berjalan','warn'); return; }
+  var errorRows=(_toolDescRows||[]).filter(function(r){ return r.status==='error'; });
+  if(!errorRows.length){ toast('Tidak ada baris error','warn'); return; }
+  /* reset error rows back to ready so runFrom picks them up */
+  errorRows.forEach(function(r){ r.status='ready'; r.error=''; });
+  _toolsSave();
+  /* run only error rows sequentially */
+  _toolDescRunState={running:true,startIndex:0};
+  var queue=errorRows.slice();
+  function step(){
+    if(!queue.length){
+      _toolDescRunState.running=false;
+      _toolsSave();
+      toast('Retry selesai','success',3200);
+      _renderTools('desc');
+      return;
+    }
+    var row=queue.shift();
+    _toolsDescGenerateOne(row.id,true).finally(function(){ setTimeout(step,350); });
+  }
+  step();
+  _renderTools('desc');
+}
 function _toolsDescEnsureXLSX(done){
   if(window.XLSX){ done(true); return; }
   if(window._toolsDescXlsxLoading){
@@ -9231,76 +9255,121 @@ function _renderTools(sub){
     var pct=rows.length>0?Math.min(100,Math.round(doneCount/rows.length*100)):0;
     var curRunRow=null;
     for(var _ri=0;_ri<rows.length;_ri++){ if(rows[_ri].status==='running'){ curRunRow=rows[_ri]; break; } }
+    /* search + filter state */
+    if(typeof window._toolDescSearch!=='string') window._toolDescSearch='';
+    if(typeof window._toolDescFilter!=='string') window._toolDescFilter='all';
+    /* apply search/filter */
+    var filteredRows=rows;
+    if(window._toolDescFilter!=='all'){
+      var _ff=window._toolDescFilter;
+      filteredRows=filteredRows.filter(function(r){ return r.status===_ff; });
+    }
+    if(window._toolDescSearch.trim()){
+      var _sq=window._toolDescSearch.trim().toLowerCase();
+      filteredRows=filteredRows.filter(function(r){
+        return (r.productCode||'').toLowerCase().indexOf(_sq)>=0||(r.productName||'').toLowerCase().indexOf(_sq)>=0;
+      });
+    }
     /* pagination */
     var PAGE_SIZE=50;
     if(typeof window._toolDescPage!=='number') window._toolDescPage=0;
-    var totalPages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+    var totalPages=Math.max(1,Math.ceil(filteredRows.length/PAGE_SIZE));
     if(window._toolDescPage>=totalPages) window._toolDescPage=totalPages-1;
     var pageStart=window._toolDescPage*PAGE_SIZE;
-    var pageRows=rows.slice(pageStart,pageStart+PAGE_SIZE);
+    var pageRows=filteredRows.slice(pageStart,pageStart+PAGE_SIZE);
     var desc='';
 
-    /* ─── header ─── */
-    desc+='<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
-    desc+='<div><div style="font-size:14px;font-weight:800;color:var(--tx)">Revisi Deskripsi Produk</div>';
-    desc+='<div style="font-size:11px;color:var(--tx2);margin-top:2px">Import Excel/CSV berisi kode, nama, dan deskripsi produk — AI revisi per baris secara berurutan.</div></div>';
-    desc+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    /* ─── compact header card ─── */
+    desc+='<div class="card" style="margin-bottom:8px;padding:10px 14px">';
+    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
+    desc+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">';
+    desc+='<span style="font-size:13px;font-weight:800;color:var(--tx)">Revisi Deskripsi</span>';
+    desc+='<span style="font-size:11px;color:var(--tx2)">'+rows.length+' baris &nbsp;·&nbsp; '+doneCount+' selesai &nbsp;·&nbsp; '+errCount+' error &nbsp;·&nbsp; '+readyCount+' pending</span>';
+    desc+='</div>';
+    desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     desc+='<button class="btns" onclick="_toolsDescDownloadTemplate()">Template</button>';
     desc+='<button class="btns" onclick="_toolsDescImportFile()">Import</button>';
     desc+='<button class="btns" onclick="_toolsDescExportResults()">Export</button>';
+    desc+='</div></div>';
+    /* progress bar */
+    desc+='<div style="margin-top:8px">';
+    desc+='<div style="height:4px;border-radius:2px;background:var(--br);overflow:hidden">';
+    desc+='<div style="height:100%;border-radius:2px;background:var(--tx);opacity:.7;width:'+pct+'%;transition:width .4s"></div>';
+    desc+='</div>';
+    desc+='<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx2);margin-top:4px">';
+    desc+='<span>'+(isRunning?'Memproses — '+esc((curRunRow?curRunRow.productName||curRunRow.productCode:'').slice(0,40)):pct+'% selesai ('+doneCount+' / '+rows.length+')')+'</span>';
+    desc+='<span>'+pct+'%</span>';
     desc+='</div></div></div>';
 
-    /* ─── stats + progress (combined compact card) ─── */
-    desc+='<div class="card" style="margin-bottom:10px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) 2fr;gap:10px;align-items:center">';
-    [['Total',rows.length,'var(--tx)'],['Selesai',doneCount,'#6ee7b7'],['Error',errCount,'#f87171'],['Pending',readyCount,'#fbbf24']].forEach(function(it){
-      desc+='<div><div style="font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--tx2)">'+it[0]+'</div><div style="font-size:20px;font-weight:900;color:'+it[2]+';margin-top:2px">'+it[1]+'</div></div>';
-    });
-    desc+='<div>';
-    desc+='<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx2);margin-bottom:4px"><span>'+(isRunning?'<b style="color:#fbbf24">Memproses…</b>'+(curRunRow?' '+esc((curRunRow.productName||curRunRow.productCode||'').slice(0,30)):''):'Selesai')+'</span><span>'+pct+'%</span></div>';
-    desc+='<div style="height:5px;border-radius:3px;background:var(--br);overflow:hidden"><div style="height:100%;border-radius:3px;background:linear-gradient(90deg,#6ee7b7,#3b82f6);width:'+pct+'%"></div></div>';
-    desc+='</div></div>';
-
     /* ─── table card ─── */
-    desc+='<div class="card">';
-    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-    desc+='<div style="display:flex;align-items:center;gap:10px">';
-    desc+='<span style="font-size:13px;font-weight:800;color:var(--tx)">Daftar Revisi</span>';
-    if(rows.length>PAGE_SIZE){
-      desc+='<span style="font-size:11px;color:var(--tx2)">'+pageStart+'–'+Math.min(pageStart+PAGE_SIZE,rows.length)+' / '+rows.length+'</span>';
-    }
+    desc+='<div class="card" style="padding:10px 14px">';
+    /* toolbar row */
+    desc+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">';
+    /* left: search + filter */
+    desc+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    desc+='<input id="TOOL-DESC-SEARCH" class="fi" placeholder="Cari kode / nama…" value="'+escAttr(window._toolDescSearch||'')+'" style="padding:4px 8px;font-size:11px;width:160px" oninput="window._toolDescSearch=this.value;window._toolDescPage=0;_renderTools(\'desc\')">';
+    desc+='<select class="fi" style="padding:4px 8px;font-size:11px" onchange="window._toolDescFilter=this.value;window._toolDescPage=0;_renderTools(\'desc\')">';
+    desc+='<option value="all"'+(window._toolDescFilter==='all'?' selected':'')+'>Semua</option>';
+    desc+='<option value="ready"'+(window._toolDescFilter==='ready'?' selected':'')+'>Siap</option>';
+    desc+='<option value="done"'+(window._toolDescFilter==='done'?' selected':'')+'>Selesai</option>';
+    desc+='<option value="error"'+(window._toolDescFilter==='error'?' selected':'')+'>Error</option>';
+    desc+='<option value="running"'+(window._toolDescFilter==='running'?' selected':'')+'>Proses</option>';
+    desc+='</select>';
+    if(filteredRows.length!==rows.length) desc+='<span style="font-size:11px;color:var(--tx2)">'+filteredRows.length+' hasil</span>';
     desc+='</div>';
+    /* right: action buttons */
     desc+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    desc+='<button class="btns" onclick="_toolsDescOpenPromptModal()">Edit Prompt</button>';
-    desc+='<button class="btns" onclick="_toolsDescRunFrom(0)"'+(isRunning?' disabled':'')+'>Generate Semua</button>';
-    desc+='<button class="btnsm" onclick="confirmDelete(\'Kosongkan semua data?\',function(){_toolDescRows=[];window._toolDescPage=0;_toolsSave();_renderTools(\'desc\')})">Kosongkan</button>';
+    desc+='<button class="btns" onclick="_toolsDescOpenPromptModal()">Prompt</button>';
+    if(isRunning){
+      desc+='<button class="btns" onclick="_toolDescRunState.running=false;_renderTools(\'desc\')">Stop</button>';
+    } else {
+      desc+='<button class="btns" onclick="_toolsDescRunFrom(0)">Generate Semua</button>';
+      if(errCount>0) desc+='<button class="btns" onclick="_toolsDescRetryErrors()">Retry Error ('+errCount+')</button>';
+    }
+    desc+='<button class="btnsm" onclick="confirmDelete(\'Kosongkan semua data?\',function(){_toolDescRows=[];window._toolDescPage=0;window._toolDescSearch=\'\';window._toolDescFilter=\'all\';_toolsSave();_renderTools(\'desc\')})">Kosongkan</button>';
     desc+='</div></div>';
+    /* info row */
+    if(rows.length>0){
+      desc+='<div style="font-size:10px;color:var(--tx2);margin-bottom:6px">';
+      desc+='Hal '+(window._toolDescPage+1)+'/'+totalPages+' &nbsp;·&nbsp; '+pageStart+'-'+Math.min(pageStart+PAGE_SIZE,filteredRows.length)+' dari '+filteredRows.length;
+      desc+='</div>';
+    }
 
-    /* table with fixed layout to prevent NO column explosion */
+    /* table with fixed layout */
     desc+='<div style="overflow-x:auto">';
     desc+='<table class="tbl" style="table-layout:fixed;min-width:860px"><colgroup>';
-    desc+='<col style="width:42px"><col style="width:120px"><col style="width:200px"><col><col><col style="width:72px"><col style="width:96px">';
+    desc+='<col style="width:40px"><col style="width:110px"><col style="width:190px"><col><col><col style="width:64px"><col style="width:90px">';
     desc+='</colgroup><thead><tr>';
-    desc+='<th style="text-align:center">No</th><th>Kode</th><th>Nama Produk</th><th>Deskripsi Produk</th><th>Deskripsi Terbaru</th><th>Status</th><th>Aksi</th>';
+    desc+='<th style="text-align:center;padding:6px 4px">No</th>';
+    desc+='<th style="padding:6px 8px">Kode</th>';
+    desc+='<th style="padding:6px 8px">Nama Produk</th>';
+    desc+='<th style="padding:6px 8px">Deskripsi Produk</th>';
+    desc+='<th style="padding:6px 8px">Deskripsi Terbaru</th>';
+    desc+='<th style="padding:6px 8px">Status</th>';
+    desc+='<th style="padding:6px 8px">Aksi</th>';
     desc+='</tr></thead><tbody>';
     if(!rows.length){
-      desc+='<tr><td colspan="7" style="text-align:center;color:var(--tx2);padding:20px">Belum ada data. Import template dulu.</td></tr>';
+      desc+='<tr><td colspan="7" style="text-align:center;color:var(--tx2);padding:24px">Belum ada data. Import template dulu.</td></tr>';
+    } else if(!pageRows.length){
+      desc+='<tr><td colspan="7" style="text-align:center;color:var(--tx2);padding:16px">Tidak ada baris yang cocok dengan pencarian / filter.</td></tr>';
     }
     for(var _pi=0;_pi<pageRows.length;_pi++){
       var r=pageRows[_pi], idx=pageStart+_pi;
       var sLabel=r.status==='done'?'Selesai':(r.status==='running'?'Proses':(r.status==='error'?'Error':'Siap'));
-      var sColor=r.status==='done'?'#6ee7b7':(r.status==='running'?'#60a5fa':(r.status==='error'?'#f87171':'#fbbf24'));
       var oldTxt=String(r.oldDescription||''); var newTxt=String(r.newDescription||'');
-      desc+='<tr>';
-      desc+='<td style="text-align:center;font-size:11px;color:var(--tx2)">'+(idx+1)+'</td>';
-      desc+='<td style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.productCode||'')+'">'+esc(r.productCode||'-')+'</td>';
-      desc+='<td style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.productName||'')+'">'+esc(r.productName||'-')+'</td>';
-      desc+='<td style="font-size:11px;color:var(--tx2);overflow:hidden"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.4">'+esc(oldTxt||'-')+'</div></td>';
-      desc+='<td style="font-size:11px;overflow:hidden"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.4;color:'+(newTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTxt||'-')+'</div>';
-      if(r.error) desc+='<div style="font-size:10px;color:#f87171;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.error)+'">'+esc(r.error.slice(0,50))+'</div>';
+      /* find global idx for "lanjut dari sini" */
+      var globalIdx=rows.indexOf(r);
+      desc+='<tr style="vertical-align:top">';
+      desc+='<td style="text-align:center;font-size:11px;color:var(--tx2);padding:7px 4px">'+(globalIdx+1)+'</td>';
+      desc+='<td style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productCode||'')+'">'+esc(r.productCode||'-')+'</td>';
+      desc+='<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 8px" title="'+escAttr(r.productName||'')+'">'+esc(r.productName||'-')+'</td>';
+      desc+='<td style="font-size:11px;color:var(--tx2);padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45">'+esc(oldTxt||'-')+'</div></td>';
+      desc+='<td style="font-size:11px;padding:7px 8px"><div style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.45;color:'+(newTxt?'var(--tx)':'var(--tx2)')+'">'+esc(newTxt||'-')+'</div>';
+      if(r.error) desc+='<div style="font-size:10px;color:var(--tx2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escAttr(r.error)+'">⚠ '+esc(r.error.slice(0,50))+'</div>';
       desc+='</td>';
-      desc+='<td><span style="font-size:11px;font-weight:700;color:'+sColor+'">'+sLabel+'</span></td>';
-      desc+='<td><select class="fi" style="padding:3px 5px;font-size:11px;width:100%" onchange="_toolsDescAction(\''+r.id+'\',this.value,'+idx+');this.value=\'\'">';
-      desc+='<option value="">Pilih…</option><option value="preview">Preview</option><option value="gen">Generate</option><option value="from">Dari sini</option><option value="del">Hapus</option>';
+      desc+='<td style="font-size:11px;padding:7px 8px;white-space:nowrap">'+sLabel+'</td>';
+      desc+='<td style="padding:5px 8px"><select class="fi" style="padding:3px 4px;font-size:11px;width:100%" onchange="_toolsDescAction(\''+r.id+'\',this.value,'+globalIdx+');this.value=\'\'">';
+      desc+='<option value="">—</option><option value="preview">Preview</option><option value="gen">Generate</option><option value="from">Dari sini</option><option value="del">Hapus</option>';
       desc+='</select></td>';
       desc+='</tr>';
     }
@@ -9308,7 +9377,7 @@ function _renderTools(sub){
 
     /* pagination controls */
     if(totalPages>1){
-      desc+='<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">';
+      desc+='<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">';
       desc+='<button class="btnsm" onclick="window._toolDescPage=0;_renderTools(\'desc\')" '+(window._toolDescPage===0?'disabled':'')+'>«</button>';
       desc+='<button class="btnsm" onclick="window._toolDescPage=Math.max(0,window._toolDescPage-1);_renderTools(\'desc\')" '+(window._toolDescPage===0?'disabled':'')+'>‹</button>';
       var pFrom=Math.max(0,window._toolDescPage-2), pTo=Math.min(totalPages-1,pFrom+4);
