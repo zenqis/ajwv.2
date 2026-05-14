@@ -6639,7 +6639,7 @@ function _toolsDescCommitImport(){
   });
   if(!mapped.length){toast('Tidak ada baris dengan kode produk yang valid','error');return;}
   if(mode==='update'){
-    /* ── MERGE COLUMNS: keep existing cols, add only new ones ── */
+    /* ── MERGE COLUMNS: keep all existing cols, append only brand-new ones ── */
     var existingCols=window._toolDescCols||[];
     var existingColKeys={};
     existingCols.forEach(function(c){existingColKeys[c.srcCol]=true;});
@@ -6647,40 +6647,74 @@ function _toolsDescCommitImport(){
     window._toolDescCols=existingCols.concat(brandNewCols.map(function(c){
       return {srcCol:c,label:c,aiLabel:c+' Terbaru'};
     }));
-    /* ── MERGE ROWS: group existing by productCode (support variations) ── */
+    /* ── MERGE ROWS: match by productCode, claim existing rows one-by-one ── */
     var existing=(_toolDescRows||[]).slice();
-    var byCode={}; /* productCode → [row, row, ...] */
+    var byCode={};
     existing.forEach(function(r){
       if(!byCode[r.productCode])byCode[r.productCode]=[];
       byCode[r.productCode].push(r);
     });
-    var added=0, updated=0;
+    /* group incoming rows by productCode too */
+    var inByCode={};
     mapped.forEach(function(nr){
-      var grp=byCode[nr.productCode];
-      if(grp&&grp.length){
-        /* Update all existing rows for this productCode (variations):
-           add new _data fields, keep old _data fields */
-        grp.forEach(function(ex){
-          if(!ex._data)ex._data={};
-          if(!ex._ai)ex._ai={};
-          brandNewCols.forEach(function(c){
-            ex._data[c]=nr._data[c]||'';
-            ex._ai[c]='';
-          });
-          ex.updatedAt=isoNow();
-        });
-        updated++;
-      }else{
-        /* New productCode — add variation row(s) */
-        if(!nr._ai)nr._ai={};
-        existingCols.forEach(function(c){if(!(c.srcCol in nr._data))nr._data[c.srcCol]='';if(!(c.srcCol in nr._ai))nr._ai[c.srcCol]='';});
-        existing.push(nr);
-        byCode[nr.productCode]=[nr];
-        added++;
+      if(!inByCode[nr.productCode])inByCode[nr.productCode]=[];
+      inByCode[nr.productCode].push(nr);
+    });
+    var claimedIds={}, added=0, updated=0;
+    var tsU=Date.now();
+    Object.keys(inByCode).forEach(function(code){
+      var inGrp=inByCode[code];
+      var exGrp=byCode[code]||[];
+      var parentEx=exGrp[0]||null; /* first existing row — donor of old-col data */
+      inGrp.forEach(function(nr){
+        /* claim one unclaimed existing row for this incoming row */
+        var claimed=null;
+        for(var _ci=0;_ci<exGrp.length;_ci++){
+          if(!claimedIds[exGrp[_ci].id]){claimed=exGrp[_ci];break;}
+        }
+        if(claimed){
+          claimedIds[claimed.id]=true;
+          if(!claimed._data)claimed._data={};
+          if(!claimed._ai)claimed._ai={};
+          /* add brand-new col data */
+          brandNewCols.forEach(function(c){claimed._data[c]=nr._data[c]||'';if(!(c in claimed._ai))claimed._ai[c]='';});
+          /* update shared cols that exist in new file too */
+          selectedCols.forEach(function(c){if(existingColKeys[c]&&nr._data[c])claimed._data[c]=nr._data[c];});
+          claimed.updatedAt=isoNow();
+          updated++;
+        }else{
+          /* no unclaimed existing row → new variation row, inherits parent's old-col data */
+          var newRow={
+            id:'desc_'+tsU+'_'+(added)+'_'+Math.random().toString(36).slice(2,6),
+            productCode:nr.productCode,
+            productName:nr.productName||(parentEx&&parentEx.productName)||'',
+            oldDescription:nr.oldDescription||(parentEx&&parentEx.oldDescription)||'',
+            _data:{},_ai:{},newTitle:'',newDescription:'',status:'ready',updatedAt:isoNow(),error:''
+          };
+          /* inherit old-col values from parent */
+          if(parentEx&&parentEx._data){
+            existingCols.forEach(function(c){newRow._data[c.srcCol]=parentEx._data[c.srcCol]||'';newRow._ai[c.srcCol]='';});
+          }else{
+            existingCols.forEach(function(c){newRow._data[c.srcCol]='';newRow._ai[c.srcCol]='';});
+          }
+          /* add brand-new col data */
+          brandNewCols.forEach(function(c){newRow._data[c]=nr._data[c]||'';newRow._ai[c]='';});
+          existing.push(newRow);
+          if(!byCode[code])byCode[code]=[];
+          byCode[code].push(newRow);
+          added++;
+        }
+      });
+    });
+    /* for existing rows NOT matched by incoming: add empty values for brand-new cols */
+    existing.forEach(function(r){
+      if(!claimedIds[r.id]){
+        if(!r._data)r._data={};if(!r._ai)r._ai={};
+        brandNewCols.forEach(function(c){if(!(c in r._data))r._data[c]='';if(!(c in r._ai))r._ai[c]='';});
       }
     });
     _toolDescRows=existing;
-    toast('Import Update: '+updated+' kode diperbarui, '+added+' baru ditambahkan, '+brandNewCols.length+' kolom baru','success',5200);
+    toast('Import Update: '+updated+' baris diperbarui, '+added+' variasi baru, '+brandNewCols.length+' kolom baru ditambahkan','success',5200);
     _toolsDescAddHistory('import-update','Import Update dari '+fileName,mapped.length);
   }else{
     _toolDescRows=mapped;
@@ -6865,7 +6899,7 @@ function _toolsDescGenerateOne(id, quiet){
       temperature:0.4,
       max_tokens:1600,
       messages:[
-        {role:'system',content:'Anda adalah editor konten produk marketplace. Output HARUS menggunakan format yang ditentukan: blok "JUDUL TERBARU:" berisi satu baris judul, lalu blok "DESKRIPSI TERBARU:" berisi deskripsi lengkap. Jangan ubah nama heading. Jangan tambahkan informasi yang tidak ada di data asli.'},
+        {role:'system',content:(window._toolDescCols&&window._toolDescCols.length>1)?'Anda adalah editor konten produk marketplace. Buat versi terbaru untuk SETIAP kolom yang diminta. Output HARUS menggunakan format KOLOM[nama kolom] TERBARU: persis seperti yang ditentukan di prompt. Tulis satu blok per kolom. Jangan ubah nama heading. Jangan tambahkan informasi yang tidak ada di data asli.':'Anda adalah editor konten produk marketplace. Output HARUS menggunakan format yang ditentukan: blok "JUDUL TERBARU:" berisi satu baris judul, lalu blok "DESKRIPSI TERBARU:" berisi deskripsi lengkap. Jangan ubah nama heading. Jangan tambahkan informasi yang tidak ada di data asli.'},
         {role:'user',content:_toolsDescBuildPrompt(row)}
       ]
     })
