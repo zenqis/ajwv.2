@@ -9362,16 +9362,24 @@ function _toolsGenerateImageBoot(root){
 }
 function _toolsFlowCanvasBoot(root,mode){
   if(!root) return;
+  var FC_VER='20260514.91';
   function mountByMode(){
     if(mode==='source'&&typeof window.AJWSourceMount==='function') window.AJWSourceMount(root);
     else if(typeof window.AJWFlowCanvasMount==='function') window.AJWFlowCanvasMount(root);
   }
-  if(typeof window.AJWFlowCanvasMount==='function'){ mountByMode(); return; }
+  /* Only reuse already-loaded script if version matches; otherwise force reload */
+  if(typeof window.AJWFlowCanvasMount==='function'&&window.AJWFlowCanvasVersion===FC_VER){
+    mountByMode(); return;
+  }
+  /* Remove old script tag and clear stale globals so fresh version loads */
   var old=document.getElementById('AJW-FC-UI');
   if(old) old.remove();
+  window.AJWFlowCanvasMount=undefined;
+  window.AJWSourceMount=undefined;
+  window.AJWFlowCanvasVersion=undefined;
   var s=document.createElement('script');
   s.id='AJW-FC-UI';
-  s.src='tools/generate-image/flow-canvas.js?v=20260514.8';
+  s.src='tools/generate-image/flow-canvas.js?v='+FC_VER;
   s.onload=mountByMode;
   s.onerror=function(){ root.innerHTML='<div class="card">Flow Canvas gagal dimuat.</div>'; };
   document.body.appendChild(s);
