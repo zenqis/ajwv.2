@@ -741,7 +741,10 @@ window.AJWFlowCanvasMount=function(root){
     document.head.appendChild(st);
   }
 
-  root.style.cssText='display:flex;flex-direction:column;height:calc(100vh - 160px);min-height:620px;';
+  /* compute available height from actual DOM position */
+  var topOff=root.getBoundingClientRect?root.getBoundingClientRect().top:160;
+  var availH=Math.max(window.innerHeight-topOff-4,520);
+  root.style.cssText='display:flex;flex-direction:column;height:'+availH+'px;min-height:520px;';
   root.innerHTML=
     '<div id="fc-toolbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;'+
     'background:#fff;border:1px solid #e2e8f0;border-radius:10px 10px 0 0;border-bottom:none;box-shadow:0 1px 4px rgba(0,0,0,.06)">'+
